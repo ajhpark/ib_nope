@@ -1,4 +1,5 @@
 from qtrade import Questrade
+from datetime import datetime
 
 class QuestradeClient:
     TICKER = "SPY"
@@ -12,7 +13,6 @@ class QuestradeClient:
         self.client.refresh_access_token(from_yaml=True, yaml_path=self.yaml_path)
 
     def get_nope(self):
-        # TODO: Handle token expiry
         call_option_filters = []
         put_option_filters = []
         chain = self.client.get_option_chain(self.TICKER)
@@ -38,7 +38,15 @@ class QuestradeClient:
         total_call_delta = sum(map(lambda q: q['volume'] * q['delta'], call_option_quotes['optionQuotes']))
         total_put_delta = sum(map(lambda q: q['volume'] * q['delta'], put_option_quotes['optionQuotes']))
 
-        return ((total_call_delta + total_put_delta) * 10000) / quote['volume']
+        try:
+            nope = ((total_call_delta + total_put_delta) * 10000) / quote['volume']
+        except ZeroDivisionError:
+            curr_dt = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
+            with open("logs/errors.txt", "a") as f:
+                f.write(f'No volume data on {quote["symbol"]} | {curr_dt}\n')
+            return [0, 0]
+
+        return [nope, quote['lastTradePrice']]
 
 
 

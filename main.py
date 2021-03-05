@@ -3,9 +3,9 @@ import logging
 import toml
 
 from ib_insync import IB, IBC, Watchdog, util
-from nope import NopeStrategy
+from nope.nope_strategy import NopeStrategy
 
-with open("conf.toml", "r") as f:
+with open("conf/conf.toml", "r") as f:
     config = toml.load(f)
 
 if config["debug"]["enabled"]:

@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 
-from ib_insync import IB
+from ib_insync import IB, Option, Stock
 from qt.qtrade_client import QuestradeClient
 
 class NopeStrategy:
@@ -12,6 +12,7 @@ class NopeStrategy:
         self.ib = ib
         self._nope_value = 0
         self._underlying_price = 0
+        self._portfolio = []
         self.qt = QuestradeClient(token_yaml=self.QT_ACCESS_TOKEN)
         self.run_qt_tasks()
 
@@ -22,13 +23,8 @@ class NopeStrategy:
     def set_nope_value(self):
         self._nope_value, self._underlying_price = self.qt.get_nope()
 
-    def get_portfolio_positions(self):
-        portfolio_positions = self.ib.portfolio()
-        return portfolio_positions
-
-    def report_open_positions(self):
-        # TODO: Implement this
-        pass
+    def update_portfolio(self):
+        self._portfolio = self.ib.portfolio()
 
     def enter_positions(self):
         # TODO: Implement this
@@ -41,6 +37,19 @@ class NopeStrategy:
         # If _nope_value > config["nope"]["long_exit"] or _nope_value < config["nope"]["short_exit"]
         #     Place sell for call/put respectively
         pass
+
+    def run_ib(self):
+        async def ib_periodic():
+            async def enter_pos():
+                self.enter_positions()
+
+            async def exit_pos():
+                self.exit_positions()
+            while True:
+                await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(ib_periodic())
 
     def run_qt_tasks(self):
         # TODO: Implement this
@@ -70,6 +79,7 @@ class NopeStrategy:
 
     def execute(self):
         self.req_market_data()
-        self.report_open_positions()
+        self.update_portfolio()
+        self.run_ib()
 
 

@@ -5,6 +5,8 @@ import toml
 from ib_insync import IB, IBC, Watchdog, util
 from nope.nope_strategy import NopeStrategy
 
+util.patchAsyncio()
+
 with open("conf/conf.toml", "r") as f:
     config = toml.load(f)
 

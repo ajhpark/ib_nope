@@ -2,7 +2,10 @@ import asyncio
 from datetime import datetime
 
 from ib_insync import IB, Option, Stock
+from ib_insync.order import MarketOrder, Order
 from qt.qtrade_client import QuestradeClient
+from utils.util import while_n_times
+
 
 class NopeStrategy:
     QT_ACCESS_TOKEN = 'qt/access_token.yml'
@@ -26,11 +29,61 @@ class NopeStrategy:
     def update_portfolio(self):
         self._portfolio = self.ib.portfolio()
 
-    def enter_positions(self):
-        # TODO: Implement this
+    # From thetagang
+    # https://github.com/brndnmtthws/thetagang
+    def wait_for_trade_submitted(self, trade):
+        while_n_times(
+            lambda: trade.orderStatus.status
+            not in [
+                "Submitted",
+                "Filled",
+                "ApiCancelled",
+                "Cancelled",
+            ],
+            lambda: self.ib.waitOnUpdate(timeout=5),
+            25
+        )
+        return trade
+
+    def find_eligible_contracts(self, symbol, right, min_strike=0, excluded_expirations=[]):
+        stock = Stock(symbol, "SMART", currency="USD")
+        contracts = self.ib.qualifyContracts(stock)
+
+        [ticker] = self.ib.reqTickers(stock)
+        tickerValue = ticker.marketPrice()
+        chains = self.ib.reqSecDefOptParams(
+            stock.symbol, "", stock.secType, stock.conId)
+        chain = next(c for c in chains if c.exchange == "SMART")
+        strikes = [strike for strike in chain.strikes
+                   if strike % 5 == 0
+                   and tickerValue - 2 < strike < tickerValue + 2]
+
+        expirations = sorted(exp for exp in chain.expirations)[:3]
+
+        contracts = [Option('SPY', expiration, strike, right, 'SMART', tradingClass='SPY')
+                     for expiration in expirations
+                     for strike in strikes]
+
+        contracts = self.ib.qualifyContracts(*contracts)
+        return contracts
+
+    def enter_positions(self, quantity=1):
+
+        # TODO: Check portfolio, use LimitOrder and adaptive strategy, add log to file,
+        # implement algorithm to select which contract to buy out of the eligible candidates
         # If _nope_value < config["nope"]["long_enter"] or _nope_value > config["nope"]["short_enter"]
         #     Place buy order for call/put respectively
-        pass
+        if self._nope_value < self.config["nope"]["long_enter"] or self._nope_value > self.config["nope"]["short_enter"]:
+            contracts = self.find_eligible_contracts("SPY", "P")
+            order = MarketOrder(
+                "BUY",
+                quantity
+            )
+
+            # Submit order
+            trade = self.wait_for_trade_submitted(
+                self.ib.placeOrder(contracts[0], order)
+            )
 
     def exit_positions(self):
         # TODO: Implement this
@@ -54,7 +107,6 @@ class NopeStrategy:
     def run_qt_tasks(self):
         # TODO: Implement this
         # After each update, must open/close positions (if necessary) according to the new nope value
-
         async def nope_periodic():
             async def fetch_and_report():
                 self.set_nope_value()
@@ -81,5 +133,3 @@ class NopeStrategy:
         self.req_market_data()
         self.update_portfolio()
         self.run_ib()
-
-

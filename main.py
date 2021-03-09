@@ -10,9 +10,9 @@ util.patchAsyncio()
 with open("conf/conf.toml", "r") as f:
     config = toml.load(f)
 
-# if config["debug"]["enabled"]:
-#     asyncio.get_event_loop().set_debug(True)
-#     util.logToConsole(logging.DEBUG)
+if config["debug"]["enabled"]:
+    asyncio.get_event_loop().set_debug(True)
+    util.logToConsole(logging.DEBUG)
 
 def onConnected():
     nope_strategy.execute()

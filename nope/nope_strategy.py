@@ -4,6 +4,7 @@ from datetime import datetime
 from ib_insync import IB, Option, Stock
 from ib_insync.order import MarketOrder, Order
 from qt.qtrade_client import QuestradeClient
+from utils.util import while_n_times
 
 
 class NopeStrategy:
@@ -24,12 +25,12 @@ class NopeStrategy:
 
     def set_nope_value(self):
         self._nope_value, self._underlying_price = self.qt.get_nope()
-        # self._nope_value, self._underlying_price = -70, 385.0
 
     def update_portfolio(self):
         self._portfolio = self.ib.portfolio()
 
     # From thetagang
+    # https://github.com/brndnmtthws/thetagang
     def wait_for_trade_submitted(self, trade):
         while_n_times(
             lambda: trade.orderStatus.status
@@ -64,26 +65,24 @@ class NopeStrategy:
                      for strike in strikes]
 
         contracts = self.ib.qualifyContracts(*contracts)
-        return contracts[0]
+        return contracts
 
     def enter_positions(self, quantity=1):
 
-        # TODO: Check portfolio and use adaptive order, add print to file on successful order
+        # TODO: Check portfolio, use LimitOrder and adaptive strategy, add log to file,
+        # implement algorithm to select which contract to buy out of the eligible candidates
         # If _nope_value < config["nope"]["long_enter"] or _nope_value > config["nope"]["short_enter"]
         #     Place buy order for call/put respectively
         if self._nope_value < self.config["nope"]["long_enter"] or self._nope_value > self.config["nope"]["short_enter"]:
-            contract = self.find_eligible_contracts("SPY", "P")
+            contracts = self.find_eligible_contracts("SPY", "P")
             order = MarketOrder(
                 "BUY",
-                quantity,
-                # algoStrategy="Adaptive",
-                # algoParams=[TagValue("adaptivePriority", "Patient")],
-                # tif="DAY"
+                quantity
             )
 
             # Submit order
             trade = self.wait_for_trade_submitted(
-                self.ib.placeOrder(contract, order)
+                self.ib.placeOrder(contracts[0], order)
             )
 
     def exit_positions(self):
@@ -115,10 +114,7 @@ class NopeStrategy:
                 curr_date = now.strftime("%Y-%m-%d")
                 curr_dt = now.strftime("%Y-%m-%d at %H:%M:%S")
                 with open(f"logs/{curr_date}.txt", "a") as f:
-                    f.write(
-                        f'NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n')
-                    # print(
-                    #     'NOPE @ ', self._nope_value, ' | Stock Price @ ', self._underlying_price, ' | ', curr_dt, '\n')
+                    f.write(f'NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n')
             while True:
                 await asyncio.gather(asyncio.sleep(60), fetch_and_report())
 
@@ -137,13 +133,3 @@ class NopeStrategy:
         self.req_market_data()
         self.update_portfolio()
         self.run_ib()
-
-
-# From thetagang
-def while_n_times(pred, body, remaining):
-    if remaining <= 0:
-        raise RuntimeError(
-            "Exhausted retries waiting on predicate. This shouldn't happen.")
-    if pred() and remaining > 0:
-        body()
-        while_n_times(pred, body, remaining - 1)

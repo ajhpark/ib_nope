@@ -143,5 +143,4 @@ cython_debug/
 # Project
 qt/access_token.yml
 qt/generate_token.py
-logs/
-
+logs/*

@@ -90,9 +90,9 @@ class NopeStrategy:
         return contracts
 
     def enter_positions(self):
-        # TODO: Add log to file
         portfolio = self.get_portfolio()
         trades = self.get_trades()
+        curr_date, curr_dt = get_datetime_for_logging()
         if self._nope_value < self.config["nope"]["long_enter"]:
             held_calls = self.get_held_contracts(portfolio, 'C')
             existing_call_order_ids = self.get_existing_order_ids(trades, 'C', 'BUY')
@@ -105,11 +105,18 @@ class NopeStrategy:
                 tickers = self.ib.reqTickers(*qualified_contracts)
                 if len(tickers) > 0:
                     price = midpoint_or_market_price(tickers[0])
-                    order = LimitOrder('BUY', self.config["nope"]["call_quantity"], price,
-                                       algoStrategy="Adaptive",
-                                       algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
-                                       tif="DAY")
-                    self.wait_for_trade_submitted(self.ib.placeOrder(qualified_contracts[0], order))
+                    call_contract = qualified_contracts[0]
+                    if not util.isNan(price):
+                        order = LimitOrder('BUY', self.config["nope"]["call_quantity"], price,
+                                           algoStrategy="Adaptive",
+                                           algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
+                                           tif="DAY")
+                        self.wait_for_trade_submitted(self.ib.placeOrder(call_contract, order))
+                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
+                            f.write(f'Bought {call_contract.strike}C for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                    else:
+                        with open("logs/errors.txt", "a") as f:
+                            f.write(f'Error buying call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
         elif self._nope_value > self.config["nope"]["short_enter"]:
             held_puts = self.get_held_contracts(portfolio, 'P')
             existing_put_order_ids = self.get_existing_order_ids(trades, 'P', 'BUY')
@@ -122,11 +129,18 @@ class NopeStrategy:
                 tickers = self.ib.reqTickers(*qualified_contracts)
                 if len(tickers) > 0:
                     price = midpoint_or_market_price(tickers[0])
-                    order = LimitOrder('BUY', self.config["nope"]["put_quantity"], price,
-                                       algoStrategy="Adaptive",
-                                       algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
-                                       tif="DAY")
-                    self.wait_for_trade_submitted(self.ib.placeOrder(qualified_contracts[0], order))
+                    put_contract = qualified_contracts[0]
+                    if not util.isNan(price):
+                        order = LimitOrder('BUY', self.config["nope"]["put_quantity"], price,
+                                           algoStrategy="Adaptive",
+                                           algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
+                                           tif="DAY")
+                        self.wait_for_trade_submitted(self.ib.placeOrder(put_contract, order))
+                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
+                            f.write(f'Bought {put_contract.strike}P for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                    else:
+                        with open("logs/errors.txt", "a") as f:
+                            f.write(f'Error buying put at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
 
     def get_held_contracts(self, portfolio, right):
         return [c for c in map(lambda p: {'contract': p.contract, 'position': p.position, 'avg': p.averageCost}, portfolio)

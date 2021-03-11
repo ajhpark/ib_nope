@@ -1,4 +1,5 @@
 from ib_insync import util
+from datetime import datetime
 
 
 # From thetagang
@@ -19,3 +20,10 @@ def midpoint_or_market_price(ticker):
         return ticker.marketPrice()
 
     return ticker.midpoint()
+
+
+def get_datetime_for_logging():
+    now = datetime.now()
+    curr_date = now.strftime("%Y-%m-%d")
+    curr_dt = now.strftime("%Y-%m-%d at %H:%M:%S")
+    return [curr_date, curr_dt]

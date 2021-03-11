@@ -5,7 +5,7 @@ from ib_insync import IB, Option, Stock, TagValue, util
 from ib_insync.order import LimitOrder, MarketOrder
 
 from qt.qtrade_client import QuestradeClient
-from utils.util import while_n_times, midpoint_or_market_price
+from utils.util import while_n_times, midpoint_or_market_price, get_datetime_for_logging
 
 
 class NopeStrategy:
@@ -100,14 +100,14 @@ class NopeStrategy:
             )
 
     def get_held_contracts(self, portfolio, right):
-        return [c for c in map(lambda p: {'contract': p.contract, 'position': p.position}, portfolio)
+        return [c for c in map(lambda p: {'contract': p.contract, 'position': p.position, 'avg': p.averageCost}, portfolio)
                 if c['contract'].right == right
                 and c['position'] > 0]
 
     def exit_positions(self):
-        # TODO: Add logging
         portfolio = self.get_portfolio()
         trades = self.get_trades()
+        curr_date, curr_dt = get_datetime_for_logging()
         if self._nope_value > self.config["nope"]["long_exit"]:
             held_calls = self.get_held_contracts(portfolio, 'C')
             existing_call_order_ids = set(map(lambda t: t.contract.conId,
@@ -128,6 +128,11 @@ class NopeStrategy:
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
                         self.wait_for_trade_submitted(self.ib.placeOrder(ticker.contract, order))
+                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
+                            f.write(f'Sold {ticker.contract.strike}C ({remaining_calls[idx]["avg"]} average) for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                    else:
+                        with open("logs/errors.txt", "a") as f:
+                            f.write(f'Error selling call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
         elif self._nope_value < self.config["nope"]["short_exit"]:
             held_puts = self.get_held_contracts(portfolio, 'P')
             existing_put_order_ids = set(map(lambda t: t.contract.conId,
@@ -148,6 +153,11 @@ class NopeStrategy:
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
                         self.wait_for_trade_submitted(self.ib.placeOrder(ticker.contract, order))
+                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
+                            f.write(f'Sold {ticker.contract.strike}P ({remaining_puts[idx]["avg"]} average) for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                    else:
+                        with open("logs/errors.txt", "a") as f:
+                            f.write(f'Error selling put at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
 
     def run_ib(self):
         async def ib_periodic():
@@ -168,9 +178,7 @@ class NopeStrategy:
         async def nope_periodic():
             async def fetch_and_report():
                 self.set_nope_value()
-                now = datetime.now()
-                curr_date = now.strftime("%Y-%m-%d")
-                curr_dt = now.strftime("%Y-%m-%d at %H:%M:%S")
+                curr_date, curr_dt = get_datetime_for_logging()
                 with open(f"logs/{curr_date}.txt", "a") as f:
                     f.write(f'NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n')
             while True:

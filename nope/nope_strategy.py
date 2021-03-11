@@ -59,6 +59,8 @@ class NopeStrategy:
         )
         return trade
 
+    # From thetagang
+    # https://github.com/brndnmtthws/thetagang
     def find_eligible_contracts(self, symbol, right):
         EXCHANGE = 'SMART'
         stock = Stock(symbol, EXCHANGE, currency="USD")
@@ -68,9 +70,16 @@ class NopeStrategy:
         chains = self.ib.reqSecDefOptParams(stock.symbol, "", stock.secType, stock.conId)
         chain = next(c for c in chains if c.exchange == EXCHANGE)
 
-        # TODO: Filter based on right and ticker_value
-        strikes = [strike for strike in chain.strikes
-                   if ticker_value - 5 < strike < ticker_value + 5]
+        def valid_strike(strike):
+            if right == 'C':
+                max_ntm_call_strike = ticker_value + 5
+                return ticker_value <= strike <= max_ntm_call_strike
+            elif right == 'P':
+                min_ntm_put_strike = ticker_value - 5
+                return min_ntm_put_strike <= strike <= ticker_value
+            return False
+
+        strikes = [strike for strike in chain.strikes if valid_strike(strike)]
 
         expirations = sorted(exp for exp in chain.expirations)[:5]
 

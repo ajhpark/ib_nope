@@ -59,50 +59,74 @@ class NopeStrategy:
         )
         return trade
 
-    def find_eligible_contracts(self, symbol, right, min_strike=0, excluded_expirations=[]):
-        stock = Stock(symbol, "SMART", currency="USD")
-        contracts = self.ib.qualifyContracts(stock)
-
+    def find_eligible_contracts(self, symbol, right):
+        EXCHANGE = 'SMART'
+        stock = Stock(symbol, EXCHANGE, currency="USD")
+        self.ib.qualifyContracts(stock)
         [ticker] = self.ib.reqTickers(stock)
-        tickerValue = ticker.marketPrice()
-        chains = self.ib.reqSecDefOptParams(
-            stock.symbol, "", stock.secType, stock.conId)
-        chain = next(c for c in chains if c.exchange == "SMART")
+        ticker_value = ticker.marketPrice()
+        chains = self.ib.reqSecDefOptParams(stock.symbol, "", stock.secType, stock.conId)
+        chain = next(c for c in chains if c.exchange == EXCHANGE)
+
+        # TODO: Filter based on right and ticker_value
         strikes = [strike for strike in chain.strikes
-                   if strike % 5 == 0
-                   and tickerValue - 2 < strike < tickerValue + 2]
+                   if ticker_value - 5 < strike < ticker_value + 5]
 
-        expirations = sorted(exp for exp in chain.expirations)[:3]
+        expirations = sorted(exp for exp in chain.expirations)[:5]
 
-        contracts = [Option('SPY', expiration, strike, right, 'SMART', tradingClass='SPY')
+        contracts = [Option(self.SYMBOL, expiration, strike, right, EXCHANGE, tradingClass=self.SYMBOL)
                      for expiration in expirations
                      for strike in strikes]
 
-        contracts = self.ib.qualifyContracts(*contracts)
         return contracts
 
-    def enter_positions(self, quantity=1):
-
-        # TODO: Check portfolio, use LimitOrder and adaptive strategy, add log to file,
-        # implement algorithm to select which contract to buy out of the eligible candidates
-        # If _nope_value < config["nope"]["long_enter"] or _nope_value > config["nope"]["short_enter"]
-        #     Place buy order for call/put respectively
-        if self._nope_value < self.config["nope"]["long_enter"] or self._nope_value > self.config["nope"]["short_enter"]:
-            contracts = self.find_eligible_contracts("SPY", "P")
-            order = MarketOrder(
-                "BUY",
-                quantity
-            )
-
-            # Submit order
-            trade = self.wait_for_trade_submitted(
-                self.ib.placeOrder(contracts[0], order)
-            )
+    def enter_positions(self):
+        # TODO: Add log to file
+        portfolio = self.get_portfolio()
+        trades = self.get_trades()
+        if self._nope_value < self.config["nope"]["long_enter"]:
+            held_calls = self.get_held_contracts(portfolio, 'C')
+            existing_call_order_ids = self.get_existing_order_ids(trades, 'C', 'BUY')
+            total_buys = len(held_calls) + len(existing_call_order_ids)
+            if total_buys < self.config["nope"]["call_limit"]:
+                contracts = self.find_eligible_contracts(self.SYMBOL, 'C')
+                # TODO: Implement contract selection from eligible candidiates
+                contract_to_buy = contracts[0]
+                qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
+                tickers = self.ib.reqTickers(*qualified_contracts)
+                if len(tickers) > 0:
+                    price = midpoint_or_market_price(tickers[0])
+                    order = LimitOrder('BUY', self.config["nope"]["call_quantity"], price,
+                                       algoStrategy="Adaptive",
+                                       algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
+                                       tif="DAY")
+                    self.wait_for_trade_submitted(self.ib.placeOrder(qualified_contracts[0], order))
+        elif self._nope_value > self.config["nope"]["short_enter"]:
+            held_puts = self.get_held_contracts(portfolio, 'P')
+            existing_put_order_ids = self.get_existing_order_ids(trades, 'P', 'BUY')
+            total_buys = len(held_puts) + len(existing_put_order_ids)
+            if total_buys < self.config["nope"]["put_limit"]:
+                contracts = self.find_eligible_contracts(self.SYMBOL, 'P')
+                # TODO: Implement contract selection from eligible candidates
+                contract_to_buy = contracts[0]
+                qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
+                tickers = self.ib.reqTickers(*qualified_contracts)
+                if len(tickers) > 0:
+                    price = midpoint_or_market_price(tickers[0])
+                    order = LimitOrder('BUY', self.config["nope"]["put_quantity"], price,
+                                       algoStrategy="Adaptive",
+                                       algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
+                                       tif="DAY")
+                    self.wait_for_trade_submitted(self.ib.placeOrder(qualified_contracts[0], order))
 
     def get_held_contracts(self, portfolio, right):
         return [c for c in map(lambda p: {'contract': p.contract, 'position': p.position, 'avg': p.averageCost}, portfolio)
                 if c['contract'].right == right
                 and c['position'] > 0]
+
+    def get_existing_order_ids(self, trades, right, buy_or_sell):
+        return set(map(lambda t: t.contract.conId,
+                       filter(lambda t: t.contract.right == right and t.order.action == buy_or_sell, trades)))
 
     def exit_positions(self):
         portfolio = self.get_portfolio()
@@ -110,8 +134,7 @@ class NopeStrategy:
         curr_date, curr_dt = get_datetime_for_logging()
         if self._nope_value > self.config["nope"]["long_exit"]:
             held_calls = self.get_held_contracts(portfolio, 'C')
-            existing_call_order_ids = set(map(lambda t: t.contract.conId,
-                                              filter(lambda t: t.contract.right == 'C' and t.order.action == "SELL", trades)))
+            existing_call_order_ids = self.get_existing_order_ids(trades, 'C', 'SELL')
             remaining_calls = list(filter(lambda c: c['contract'].conId not in existing_call_order_ids, held_calls))
             remaining_calls.sort(key=lambda c: c['contract'].conId)
 
@@ -135,8 +158,7 @@ class NopeStrategy:
                             f.write(f'Error selling call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
         elif self._nope_value < self.config["nope"]["short_exit"]:
             held_puts = self.get_held_contracts(portfolio, 'P')
-            existing_put_order_ids = set(map(lambda t: t.contract.conId,
-                                             filter(lambda t: t.contract.right == 'P' and t.order.action == "SELL", trades)))
+            existing_put_order_ids = self.get_existing_order_ids(trades, 'P', 'SELL')
             remaining_puts = list(filter(lambda c: c['contract'].conId not in existing_put_order_ids, held_puts))
             remaining_puts.sort(key=lambda c: c['contract'].conId)
 
@@ -173,8 +195,6 @@ class NopeStrategy:
         loop.create_task(ib_periodic())
 
     def run_qt_tasks(self):
-        # TODO: Implement this
-        # After each update, must open/close positions (if necessary) according to the new nope value
         async def nope_periodic():
             async def fetch_and_report():
                 self.set_nope_value()

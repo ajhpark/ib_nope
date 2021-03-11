@@ -107,13 +107,14 @@ class NopeStrategy:
                     price = midpoint_or_market_price(tickers[0])
                     call_contract = qualified_contracts[0]
                     if not util.isNan(price):
-                        order = LimitOrder('BUY', self.config["nope"]["call_quantity"], price,
+                        quantity = self.config["nope"]["call_quantity"]
+                        order = LimitOrder('BUY', quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
                         self.wait_for_trade_submitted(self.ib.placeOrder(call_contract, order))
                         with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Bought {call_contract.strike}C for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Bought {quantity} {call_contract.strike}C{call_contract.lastTradeDateOrContractMonth} for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error buying call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
@@ -131,13 +132,14 @@ class NopeStrategy:
                     price = midpoint_or_market_price(tickers[0])
                     put_contract = qualified_contracts[0]
                     if not util.isNan(price):
-                        order = LimitOrder('BUY', self.config["nope"]["put_quantity"], price,
+                        quantity = self.config["nope"]["put_quantity"]
+                        order = LimitOrder('BUY', quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
                         self.wait_for_trade_submitted(self.ib.placeOrder(put_contract, order))
                         with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Bought {put_contract.strike}P for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Bought {quantity} {put_contract.strike}P{put_contract.lastTradeDateOrContractMonth} for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error buying put at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
@@ -169,13 +171,15 @@ class NopeStrategy:
                 for idx, ticker in enumerate(tickers):
                     price = midpoint_or_market_price(ticker)
                     if not util.isNan(price):
-                        order = LimitOrder("SELL", remaining_calls[idx]['position'], price,
+                        quantity = remaining_calls[idx]['position']
+                        order = LimitOrder("SELL", quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
-                        self.wait_for_trade_submitted(self.ib.placeOrder(ticker.contract, order))
+                        call_contract = ticker.contract
+                        self.wait_for_trade_submitted(self.ib.placeOrder(call_contract, order))
                         with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Sold {ticker.contract.strike}C ({remaining_calls[idx]["avg"]} average) for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Sold {quantity} {call_contract.strike}C{call_contract.lastTradeDateOrContractMonth} ({remaining_calls[idx]["avg"]} average) for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error selling call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
@@ -193,13 +197,15 @@ class NopeStrategy:
                 for idx, ticker in enumerate(tickers):
                     price = midpoint_or_market_price(ticker)
                     if not util.isNan(price):
-                        order = LimitOrder("SELL", remaining_puts[idx]['position'], price,
+                        quantity = remaining_puts[idx]['position']
+                        order = LimitOrder("SELL", quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
-                        self.wait_for_trade_submitted(self.ib.placeOrder(ticker.contract, order))
+                        put_contract = ticker.contract
+                        self.wait_for_trade_submitted(self.ib.placeOrder(put_contract, order))
                         with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Sold {ticker.contract.strike}P ({remaining_puts[idx]["avg"]} average) for {price * 100}, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Sold {quantity} {put_contract.strike}P{put_contract.lastTradeDateOrContractMonth} ({remaining_puts[idx]["avg"]} average) for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error selling put at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')

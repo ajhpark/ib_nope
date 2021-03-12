@@ -2,10 +2,10 @@ import asyncio
 from datetime import datetime
 
 from ib_insync import IB, Option, Stock, TagValue, util
-from ib_insync.order import LimitOrder, MarketOrder
+from ib_insync.order import LimitOrder
 
 from qt.qtrade_client import QuestradeClient
-from utils.util import while_n_times, midpoint_or_market_price, get_datetime_for_logging
+from utils.util import while_n_times, midpoint_or_market_price, get_datetime_for_logging, log_exception
 
 
 class NopeStrategy:
@@ -217,10 +217,17 @@ class NopeStrategy:
     def run_ib(self):
         async def ib_periodic():
             async def enter_pos():
-                self.enter_positions()
+                try:
+                    self.enter_positions()
+                except Exception as e:
+                    log_exception(e)
 
             async def exit_pos():
-                self.exit_positions()
+                try:
+                    self.exit_positions()
+                except Exception as e:
+                    log_exception(e)
+
             while True:
                 await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
 

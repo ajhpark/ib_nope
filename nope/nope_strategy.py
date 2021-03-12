@@ -63,6 +63,8 @@ class NopeStrategy:
     # https://github.com/brndnmtthws/thetagang
     def find_eligible_contracts(self, symbol, right):
         EXCHANGE = 'SMART'
+        MAX_STRIKE_OFFSET = 5
+
         stock = Stock(symbol, EXCHANGE, currency="USD")
         self.ib.qualifyContracts(stock)
         [ticker] = self.ib.reqTickers(stock)
@@ -72,16 +74,18 @@ class NopeStrategy:
 
         def valid_strike(strike):
             if right == 'C':
-                max_ntm_call_strike = ticker_value + 5
+                max_ntm_call_strike = ticker_value + MAX_STRIKE_OFFSET
                 return ticker_value <= strike <= max_ntm_call_strike
             elif right == 'P':
-                min_ntm_put_strike = ticker_value - 5
+                min_ntm_put_strike = ticker_value - MAX_STRIKE_OFFSET
                 return min_ntm_put_strike <= strike <= ticker_value
             return False
 
         strikes = [strike for strike in chain.strikes if valid_strike(strike)]
 
-        expirations = sorted(exp for exp in chain.expirations)[:5]
+        # TODO: Remove slicing once contract selection algorithm implemented
+        exp_offset = self.config["nope"]["expiry_offset"]
+        expirations = sorted(exp for exp in chain.expirations)[exp_offset:exp_offset + 1]
 
         contracts = [Option(self.SYMBOL, expiration, strike, right, EXCHANGE, tradingClass=self.SYMBOL)
                      for expiration in expirations
@@ -100,7 +104,7 @@ class NopeStrategy:
             if total_buys < self.config["nope"]["call_limit"]:
                 contracts = self.find_eligible_contracts(self.SYMBOL, 'C')
                 # TODO: Implement contract selection from eligible candidiates
-                contract_to_buy = contracts[0]
+                contract_to_buy = contracts[self.config["nope"]["call_strike_offset"]]
                 qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
                 tickers = self.ib.reqTickers(*qualified_contracts)
                 if len(tickers) > 0:
@@ -125,7 +129,7 @@ class NopeStrategy:
             if total_buys < self.config["nope"]["put_limit"]:
                 contracts = self.find_eligible_contracts(self.SYMBOL, 'P')
                 # TODO: Implement contract selection from eligible candidates
-                contract_to_buy = contracts[0]
+                contract_to_buy = contracts[-self.config["nope"]["put_strike_offset"] - 1]
                 qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
                 tickers = self.ib.reqTickers(*qualified_contracts)
                 if len(tickers) > 0:

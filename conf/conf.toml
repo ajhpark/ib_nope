@@ -7,6 +7,9 @@ call_limit = 5
 put_limit = 5
 call_quantity = 1
 put_quantity = 1
+expiry_offset = 2
+call_strike_offset = 1
+put_strike_offset = 1
 
 [debug]
 enabled = false

@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 
 from ib_insync import IB, Option, Stock, TagValue, util
 from ib_insync.order import LimitOrder
@@ -165,9 +164,9 @@ class NopeStrategy:
             held_calls = self.get_held_contracts(portfolio, 'C')
             existing_call_order_ids = self.get_existing_order_ids(trades, 'C', 'SELL')
             remaining_calls = list(filter(lambda c: c['contract'].conId not in existing_call_order_ids, held_calls))
-            remaining_calls.sort(key=lambda c: c['contract'].conId)
 
             if len(remaining_calls) > 0:
+                remaining_calls.sort(key=lambda c: c['contract'].conId)
                 remaining_call_contracts = [c['contract'] for c in remaining_calls]
                 qualified_contracts = self.ib.qualifyContracts(*remaining_call_contracts)
                 tickers = self.ib.reqTickers(*qualified_contracts)
@@ -187,13 +186,13 @@ class NopeStrategy:
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error selling call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
-        elif self._nope_value < self.config["nope"]["short_exit"]:
+        if self._nope_value < self.config["nope"]["short_exit"]:
             held_puts = self.get_held_contracts(portfolio, 'P')
             existing_put_order_ids = self.get_existing_order_ids(trades, 'P', 'SELL')
             remaining_puts = list(filter(lambda c: c['contract'].conId not in existing_put_order_ids, held_puts))
-            remaining_puts.sort(key=lambda c: c['contract'].conId)
 
             if len(remaining_puts) > 0:
+                remaining_puts.sort(key=lambda c: c['contract'].conId)
                 remaining_put_contracts = [c['contract'] for c in remaining_puts]
                 qualified_contracts = self.ib.qualifyContracts(*remaining_put_contracts)
                 tickers = self.ib.reqTickers(*qualified_contracts)

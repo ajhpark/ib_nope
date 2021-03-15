@@ -14,12 +14,23 @@ if config["debug"]["enabled"]:
     asyncio.get_event_loop().set_debug(True)
     util.logToConsole(logging.DEBUG)
 
-def onConnected():
-    nope_strategy.execute()
+task_run_ib = None
+
+
+def onConnect():
+    global task_run_ib
+    task_run_ib = nope_strategy.execute()
+
+
+def onDisconnect():
+    if task_run_ib is not None:
+        task_run_ib.cancel()
+
 
 ibc = IBC(978, tradingMode='paper')
 ib = IB()
-ib.connectedEvent += onConnected
+ib.connectedEvent += onConnect
+ib.disconnectedEvent += onDisconnect
 
 nope_strategy = NopeStrategy(config, ib)
 

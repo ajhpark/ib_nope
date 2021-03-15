@@ -240,7 +240,7 @@ class NopeStrategy:
                 await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
 
         loop = asyncio.get_event_loop()
-        loop.create_task(ib_periodic())
+        return loop.create_task(ib_periodic())
 
     def run_qt_tasks(self):
         async def nope_periodic():
@@ -273,4 +273,4 @@ class NopeStrategy:
 
     def execute(self):
         self.req_market_data()
-        self.run_ib()
+        return self.run_ib()

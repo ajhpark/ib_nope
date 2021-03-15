@@ -72,12 +72,13 @@ class NopeStrategy:
         chain = next(c for c in chains if c.exchange == EXCHANGE)
 
         def valid_strike(strike):
-            if right == 'C':
-                max_ntm_call_strike = ticker_value + MAX_STRIKE_OFFSET
-                return ticker_value <= strike <= max_ntm_call_strike
-            elif right == 'P':
-                min_ntm_put_strike = ticker_value - MAX_STRIKE_OFFSET
-                return min_ntm_put_strike <= strike <= ticker_value
+            if strike % 1 == 0:
+                if right == 'C':
+                    max_ntm_call_strike = ticker_value + MAX_STRIKE_OFFSET
+                    return ticker_value <= strike <= max_ntm_call_strike
+                elif right == 'P':
+                    min_ntm_put_strike = ticker_value - MAX_STRIKE_OFFSET
+                    return min_ntm_put_strike <= strike <= ticker_value
             return False
 
         strikes = [strike for strike in chain.strikes if valid_strike(strike)]
@@ -92,14 +93,22 @@ class NopeStrategy:
 
         return contracts
 
+    def get_total_buys(self, trades, right):
+        return sum(map(lambda t: t.order.totalQuantity,
+                   filter(lambda t: t.contract.right == right and t.order.action == 'BUY', trades)))
+
+    def get_total_position(self, portfolio, right):
+        held_contracts = self.get_held_contracts(portfolio, right)
+        return sum(map(lambda c: c['position'], held_contracts))
+
     def enter_positions(self):
         portfolio = self.get_portfolio()
         trades = self.get_trades()
         curr_date, curr_dt = get_datetime_for_logging()
         if self._nope_value < self.config["nope"]["long_enter"]:
-            held_calls = self.get_held_contracts(portfolio, 'C')
-            existing_call_order_ids = self.get_existing_order_ids(trades, 'C', 'BUY')
-            total_buys = len(held_calls) + len(existing_call_order_ids)
+            held_calls = self.get_total_position(portfolio, 'C')
+            existing_order_quantity = self.get_total_buys(trades, 'C')
+            total_buys = held_calls + existing_order_quantity
             if total_buys < self.config["nope"]["call_limit"]:
                 contracts = self.find_eligible_contracts(self.SYMBOL, 'C')
                 # TODO: Implement contract selection from eligible candidiates
@@ -122,9 +131,9 @@ class NopeStrategy:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error buying call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
         elif self._nope_value > self.config["nope"]["short_enter"]:
-            held_puts = self.get_held_contracts(portfolio, 'P')
-            existing_put_order_ids = self.get_existing_order_ids(trades, 'P', 'BUY')
-            total_buys = len(held_puts) + len(existing_put_order_ids)
+            held_puts = self.get_total_position(portfolio, 'P')
+            existing_order_quantity = self.get_total_buys(trades, 'P')
+            total_buys = held_puts + existing_order_quantity
             if total_buys < self.config["nope"]["put_limit"]:
                 contracts = self.find_eligible_contracts(self.SYMBOL, 'P')
                 # TODO: Implement contract selection from eligible candidates
@@ -219,13 +228,13 @@ class NopeStrategy:
                 try:
                     self.enter_positions()
                 except Exception as e:
-                    log_exception(e)
+                    log_exception(e, "enter_positions")
 
             async def exit_pos():
                 try:
                     self.exit_positions()
                 except Exception as e:
-                    log_exception(e)
+                    log_exception(e, "exit_positions")
 
             while True:
                 await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
@@ -236,7 +245,11 @@ class NopeStrategy:
     def run_qt_tasks(self):
         async def nope_periodic():
             async def fetch_and_report():
-                self.set_nope_value()
+                try:
+                    self.set_nope_value()
+                except Exception as e:
+                    log_exception(e, "set_nope_value")
+
                 curr_date, curr_dt = get_datetime_for_logging()
                 with open(f"logs/{curr_date}.txt", "a") as f:
                     f.write(f'NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n')
@@ -245,7 +258,11 @@ class NopeStrategy:
 
         async def token_refresh_periodic():
             async def refresh_token():
-                self.qt.refresh_access_token()
+                try:
+                    self.qt.refresh_access_token()
+                except Exception as e:
+                    log_exception(e, "refresh_token")
+
             while True:
                 await asyncio.sleep(600)
                 await refresh_token()

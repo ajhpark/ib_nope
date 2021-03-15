@@ -29,8 +29,9 @@ def get_datetime_for_logging():
     return [curr_date, curr_dt]
 
 
-def log_exception(e: Exception):
+def log_exception(e: Exception, fn):
     str_err = "Error {0}".format(str(e))
     _, curr_dt = get_datetime_for_logging()
+    print(f'{str_err} in {fn} | {curr_dt}')
     with open("logs/errors.txt", "a") as f:
-        f.write(f'{str_err} | {curr_dt}\n')
+        f.write(f'{str_err} in {fn} | {curr_dt}\n')

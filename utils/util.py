@@ -6,17 +6,6 @@ import sys
 
 # From thetagang
 # https://github.com/brndnmtthws/thetagang
-def while_n_times(pred, body, remaining):
-    if remaining <= 0:
-        raise RuntimeError(
-            "Exhausted retries waiting on predicate. This shouldn't happen.")
-    if pred() and remaining > 0:
-        body()
-        while_n_times(pred, body, remaining - 1)
-
-
-# From thetagang
-# https://github.com/brndnmtthws/thetagang
 def midpoint_or_market_price(ticker):
     if util.isNan(ticker.midpoint()):
         return round(ticker.marketPrice(), 2)
@@ -50,3 +39,14 @@ def log_exception(e: Exception, fn):
     print(get_stack_trace())
     with open("logs/errors.txt", "a") as f:
         f.write(f'{str_err} in {fn} | {curr_dt}\n{get_stack_trace()}\n')
+
+
+def log_fill(filled_trade):
+    curr_date, curr_dt = get_datetime_for_logging()
+    try:
+        fill = filled_trade.fills[0]
+    except Exception as e:
+        log_exception(e, "on_filled trade fills empty")
+    avg_fill_price = round(fill.execution.avgPrice * 100, 2)
+    with open(f"logs/{curr_date}-trade.txt", "a") as f:
+        f.write(f'{fill.execution.side} {fill.execution.shares} {fill.contract.strike}{fill.contract.right}{fill.contract.lastTradeDateOrContractMonth} for {avg_fill_price} each, {curr_dt}\n')

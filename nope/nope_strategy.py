@@ -4,7 +4,7 @@ from ib_insync import IB, Option, Stock, TagValue, util
 from ib_insync.order import LimitOrder
 
 from qt.qtrade_client import QuestradeClient
-from utils.util import while_n_times, midpoint_or_market_price, get_datetime_for_logging, log_exception
+from utils.util import midpoint_or_market_price, get_datetime_for_logging, log_exception, log_fill
 
 
 class NopeStrategy:
@@ -40,23 +40,6 @@ class NopeStrategy:
         trades = [t for t in trades
                   if t.isActive() and t.contract.symbol == self.SYMBOL]
         return trades
-
-    # From thetagang
-    # https://github.com/brndnmtthws/thetagang
-    def wait_for_trade_submitted(self, trade):
-        while_n_times(
-            lambda: trade.orderStatus.status
-            not in [
-                "Submitted",
-                "Filled",
-                "ApiCancelled",
-                "Cancelled",
-                "PreSubmitted"
-            ],
-            lambda: self.ib.waitOnUpdate(timeout=5),
-            25
-        )
-        return trade
 
     # From thetagang
     # https://github.com/brndnmtthws/thetagang
@@ -104,7 +87,8 @@ class NopeStrategy:
     def enter_positions(self):
         portfolio = self.get_portfolio()
         trades = self.get_trades()
-        curr_date, curr_dt = get_datetime_for_logging()
+        action = 'BUY'
+
         if self._nope_value < self.config["nope"]["long_enter"]:
             held_calls = self.get_total_position(portfolio, 'C')
             existing_order_quantity = self.get_total_buys(trades, 'C')
@@ -120,16 +104,16 @@ class NopeStrategy:
                     call_contract = qualified_contracts[0]
                     if not util.isNan(price):
                         quantity = self.config["nope"]["call_quantity"]
-                        order = LimitOrder('BUY', quantity, price,
+                        order = LimitOrder(action, quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
-                        self.wait_for_trade_submitted(self.ib.placeOrder(call_contract, order))
-                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Bought {quantity} {call_contract.strike}C{call_contract.lastTradeDateOrContractMonth} for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                        trade = self.ib.placeOrder(call_contract, order)
+                        trade.filledEvent += log_fill
+                        self.log_order(call_contract, quantity, price, action)
                     else:
                         with open("logs/errors.txt", "a") as f:
-                            f.write(f'Error buying call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Error buying call at {self._nope_value} | {self._underlying_price}\n')
         elif self._nope_value > self.config["nope"]["short_enter"]:
             held_puts = self.get_total_position(portfolio, 'P')
             existing_order_quantity = self.get_total_buys(trades, 'P')
@@ -145,16 +129,16 @@ class NopeStrategy:
                     put_contract = qualified_contracts[0]
                     if not util.isNan(price):
                         quantity = self.config["nope"]["put_quantity"]
-                        order = LimitOrder('BUY', quantity, price,
+                        order = LimitOrder(action, quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
-                        self.wait_for_trade_submitted(self.ib.placeOrder(put_contract, order))
-                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Bought {quantity} {put_contract.strike}P{put_contract.lastTradeDateOrContractMonth} for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                        trade = self.ib.placeOrder(put_contract, order)
+                        trade.filledEvent += log_fill
+                        self.log_order(put_contract, quantity, price, action)
                     else:
                         with open("logs/errors.txt", "a") as f:
-                            f.write(f'Error buying put at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Error buying put at {self._nope_value} | {self._underlying_price}\n')
 
     def get_held_contracts(self, portfolio, right):
         return [c for c in map(lambda p: {'contract': p.contract, 'position': p.position, 'avg': p.averageCost}, portfolio)
@@ -165,10 +149,20 @@ class NopeStrategy:
         return set(map(lambda t: t.contract.conId,
                        filter(lambda t: t.contract.right == right and t.order.action == buy_or_sell, trades)))
 
+    def log_order(self, contract, quantity, price, action, avg=0):
+        curr_date, curr_dt = get_datetime_for_logging()
+        log_str = f'Placed {action} order {quantity} {contract.strike}{contract.right}{contract.lastTradeDateOrContractMonth}'
+        if action == 'SELL':
+            log_str += f' ({round(avg, 2)} average)'
+        log_str += f' for {round(price * 100, 2)} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n'
+        with open(f"logs/{curr_date}-trade.txt", "a") as f:
+            f.write(log_str)
+
     def exit_positions(self):
         portfolio = self.get_portfolio()
         trades = self.get_trades()
-        curr_date, curr_dt = get_datetime_for_logging()
+        action = 'SELL'
+
         if self._nope_value > self.config["nope"]["long_exit"]:
             held_calls = self.get_held_contracts(portfolio, 'C')
             existing_call_order_ids = self.get_existing_order_ids(trades, 'C', 'SELL')
@@ -184,17 +178,17 @@ class NopeStrategy:
                     price = midpoint_or_market_price(ticker)
                     if not util.isNan(price):
                         quantity = remaining_calls[idx]['position']
-                        order = LimitOrder("SELL", quantity, price,
+                        order = LimitOrder(action, quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
                         call_contract = ticker.contract
-                        self.wait_for_trade_submitted(self.ib.placeOrder(call_contract, order))
-                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Sold {quantity} {call_contract.strike}C{call_contract.lastTradeDateOrContractMonth} ({remaining_calls[idx]["avg"]} average) for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                        trade = self.ib.placeOrder(call_contract, order)
+                        trade.filledEvent += log_fill
+                        self.log_order(call_contract, quantity, price, action, remaining_calls[idx]['avg'])
                     else:
                         with open("logs/errors.txt", "a") as f:
-                            f.write(f'Error selling call at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Error selling call at {self._nope_value} | {self._underlying_price}\n')
         if self._nope_value < self.config["nope"]["short_exit"]:
             held_puts = self.get_held_contracts(portfolio, 'P')
             existing_put_order_ids = self.get_existing_order_ids(trades, 'P', 'SELL')
@@ -210,17 +204,17 @@ class NopeStrategy:
                     price = midpoint_or_market_price(ticker)
                     if not util.isNan(price):
                         quantity = remaining_puts[idx]['position']
-                        order = LimitOrder("SELL", quantity, price,
+                        order = LimitOrder(action, quantity, price,
                                            algoStrategy="Adaptive",
                                            algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
                                            tif="DAY")
                         put_contract = ticker.contract
-                        self.wait_for_trade_submitted(self.ib.placeOrder(put_contract, order))
-                        with open(f"logs/{curr_date}-trade.txt", "a") as f:
-                            f.write(f'Sold {quantity} {put_contract.strike}P{put_contract.lastTradeDateOrContractMonth} ({remaining_puts[idx]["avg"]} average) for {price * 100} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                        trade = self.ib.placeOrder(put_contract, order)
+                        trade.filledEvent += log_fill
+                        self.log_order(put_contract, quantity, price, action, remaining_puts[idx]['avg'])
                     else:
                         with open("logs/errors.txt", "a") as f:
-                            f.write(f'Error selling put at {self._nope_value} | {self._underlying_price} | {curr_dt}\n')
+                            f.write(f'Error selling put at {self._nope_value} | {self._underlying_price}\n')
 
     def run_ib(self):
         async def ib_periodic():

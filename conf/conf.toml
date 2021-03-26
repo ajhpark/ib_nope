@@ -1,8 +1,8 @@
 [nope]
 long_enter = -60
 long_exit  = -30
-short_enter = 30
-short_exit  = 15
+short_enter = 50
+short_exit  = 35
 call_limit = 5
 put_limit = 5
 call_quantity = 1

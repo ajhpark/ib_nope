@@ -93,7 +93,8 @@ class NopeStrategy:
             held_calls = self.get_total_position(portfolio, 'C')
             existing_order_quantity = self.get_total_buys(trades, 'C')
             total_buys = held_calls + existing_order_quantity
-            if total_buys < self.config["nope"]["call_limit"]:
+            call_buy_limit = self.config["nope"]["call_limit"]
+            if total_buys < call_buy_limit:
                 contracts = self.find_eligible_contracts(self.SYMBOL, 'C')
                 # TODO: Implement contract selection from eligible candidiates
                 contract_to_buy = contracts[self.config["nope"]["call_strike_offset"]]
@@ -114,6 +115,8 @@ class NopeStrategy:
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error buying call at {self._nope_value} | {self._underlying_price}\n')
+                elif held_calls >= call_buy_limit:
+                    pass
         elif self._nope_value > self.config["nope"]["short_enter"]:
             held_puts = self.get_total_position(portfolio, 'P')
             existing_order_quantity = self.get_total_buys(trades, 'P')
@@ -176,7 +179,8 @@ class NopeStrategy:
                 tickers.sort(key=lambda t: t.contract.conId)
                 for idx, ticker in enumerate(tickers):
                     price = midpoint_or_market_price(ticker)
-                    if not util.isNan(price):
+                    avg = remaining_calls[idx]['avg']
+                    if not util.isNan(price) and (price * 100) > avg:
                         quantity = remaining_calls[idx]['position']
                         order = LimitOrder(action, quantity, price,
                                            algoStrategy="Adaptive",
@@ -185,7 +189,7 @@ class NopeStrategy:
                         call_contract = ticker.contract
                         trade = self.ib.placeOrder(call_contract, order)
                         trade.filledEvent += log_fill
-                        self.log_order(call_contract, quantity, price, action, remaining_calls[idx]['avg'])
+                        self.log_order(call_contract, quantity, price, action, avg)
                     else:
                         with open("logs/errors.txt", "a") as f:
                             f.write(f'Error selling call at {self._nope_value} | {self._underlying_price}\n')
@@ -202,7 +206,8 @@ class NopeStrategy:
                 tickers.sort(key=lambda t: t.contract.conId)
                 for idx, ticker in enumerate(tickers):
                     price = midpoint_or_market_price(ticker)
-                    if not util.isNan(price):
+                    avg = remaining_puts[idx]['avg']
+                    if not util.isNan(price) and (price * 100) > avg:
                         quantity = remaining_puts[idx]['position']
                         order = LimitOrder(action, quantity, price,
                                            algoStrategy="Adaptive",
@@ -211,10 +216,10 @@ class NopeStrategy:
                         put_contract = ticker.contract
                         trade = self.ib.placeOrder(put_contract, order)
                         trade.filledEvent += log_fill
-                        self.log_order(put_contract, quantity, price, action, remaining_puts[idx]['avg'])
+                        self.log_order(put_contract, quantity, price, action, avg)
                     else:
                         with open("logs/errors.txt", "a") as f:
-                            f.write(f'Error selling put at {self._nope_value} | {self._underlying_price}\n')
+                            f.write(f'Error selling put at {self._nope_value} | {self._underlying_price} | {avg} | {price}\n')
 
     def run_ib(self):
         async def ib_periodic():

@@ -4,11 +4,16 @@ from ib_insync import IB, Option, Stock, TagValue, util
 from ib_insync.order import LimitOrder
 
 from qt.qtrade_client import QuestradeClient
-from utils.util import midpoint_or_market_price, get_datetime_for_logging, log_exception, log_fill
+from utils.util import (
+    get_datetime_for_logging,
+    log_exception,
+    log_fill,
+    midpoint_or_market_price,
+)
 
 
 class NopeStrategy:
-    QT_ACCESS_TOKEN = 'qt/access_token.yml'
+    QT_ACCESS_TOKEN = "qt/access_token.yml"
     SYMBOL = "SPY"
 
     def __init__(self, config, ib: IB):
@@ -31,35 +36,37 @@ class NopeStrategy:
     def get_portfolio(self):
         portfolio = self.ib.portfolio()
         # Filter out non-SPY contracts
-        portfolio = [item for item in portfolio
-                     if item.contract.symbol == self.SYMBOL]
+        portfolio = [item for item in portfolio if item.contract.symbol == self.SYMBOL]
         return portfolio
 
     def get_trades(self):
         trades = self.ib.openTrades()
-        trades = [t for t in trades
-                  if t.isActive() and t.contract.symbol == self.SYMBOL]
+        trades = [
+            t for t in trades if t.isActive() and t.contract.symbol == self.SYMBOL
+        ]
         return trades
 
     # From thetagang
     # https://github.com/brndnmtthws/thetagang
     def find_eligible_contracts(self, symbol, right):
-        EXCHANGE = 'SMART'
+        EXCHANGE = "SMART"
         MAX_STRIKE_OFFSET = 5
 
         stock = Stock(symbol, EXCHANGE, currency="USD")
         self.ib.qualifyContracts(stock)
         [ticker] = self.ib.reqTickers(stock)
         ticker_value = ticker.marketPrice()
-        chains = self.ib.reqSecDefOptParams(stock.symbol, "", stock.secType, stock.conId)
+        chains = self.ib.reqSecDefOptParams(
+            stock.symbol, "", stock.secType, stock.conId
+        )
         chain = next(c for c in chains if c.exchange == EXCHANGE)
 
         def valid_strike(strike):
             if strike % 1 == 0:
-                if right == 'C':
+                if right == "C":
                     max_ntm_call_strike = ticker_value + MAX_STRIKE_OFFSET
                     return ticker_value <= strike <= max_ntm_call_strike
-                elif right == 'P':
+                elif right == "P":
                     min_ntm_put_strike = ticker_value - MAX_STRIKE_OFFSET
                     return min_ntm_put_strike <= strike <= ticker_value
             return False
@@ -68,27 +75,49 @@ class NopeStrategy:
 
         # TODO: Remove slicing once contract selection algorithm implemented
         exp_offset = self.config["nope"]["expiry_offset"]
-        expirations = sorted(exp for exp in chain.expirations)[exp_offset:exp_offset + 1]
+        expirations = sorted(exp for exp in chain.expirations)[
+            exp_offset : exp_offset + 1
+        ]
 
-        contracts = [Option(self.SYMBOL, expiration, strike, right, EXCHANGE, tradingClass=self.SYMBOL)
-                     for expiration in expirations
-                     for strike in strikes]
+        contracts = [
+            Option(
+                self.SYMBOL,
+                expiration,
+                strike,
+                right,
+                EXCHANGE,
+                tradingClass=self.SYMBOL,
+            )
+            for expiration in expirations
+            for strike in strikes
+        ]
 
         return contracts
 
     def get_num_open_buy_orders(self, trades, right):
-        return sum(map(lambda t: t.order.totalQuantity,
-                   filter(lambda t: t.contract.right == right and t.order.action == 'BUY', trades)))
+        return sum(
+            map(
+                lambda t: t.order.totalQuantity,
+                filter(
+                    lambda t: t.contract.right == right and t.order.action == "BUY",
+                    trades,
+                ),
+            )
+        )
 
     def get_total_position(self, portfolio, right):
         held_contracts = self.get_held_contracts_info(portfolio, right)
-        return sum(map(lambda c: c['position'], held_contracts))
+        return sum(map(lambda c: c["position"], held_contracts))
 
     def buy_contracts(self, right):
-        action = 'BUY'
+        action = "BUY"
         contracts = self.find_eligible_contracts(self.SYMBOL, right)
         # TODO: Improve contract selection https://github.com/ajhpark/ib_nope/issues/21
-        offset = self.config["nope"]["call_strike_offset"] if right == 'C' else -self.config["nope"]["put_strike_offset"] - 1
+        offset = (
+            self.config["nope"]["call_strike_offset"]
+            if right == "C"
+            else -self.config["nope"]["put_strike_offset"] - 1
+        )
         contract_to_buy = contracts[offset]
         qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
         tickers = self.ib.reqTickers(*qualified_contracts)
@@ -96,17 +125,27 @@ class NopeStrategy:
             price = midpoint_or_market_price(tickers[0])
             if not util.isNan(price):
                 contract = qualified_contracts[0]
-                quantity = self.config["nope"]["call_quantity"] if right == 'C' else self.config["nope"]["put_quantity"]
-                order = LimitOrder(action, quantity, price,
-                                   algoStrategy="Adaptive",
-                                   algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
-                                   tif="DAY")
+                quantity = (
+                    self.config["nope"]["call_quantity"]
+                    if right == "C"
+                    else self.config["nope"]["put_quantity"]
+                )
+                order = LimitOrder(
+                    action,
+                    quantity,
+                    price,
+                    algoStrategy="Adaptive",
+                    algoParams=[TagValue(tag="adaptivePriority", value="Normal")],
+                    tif="DAY",
+                )
                 trade = self.ib.placeOrder(contract, order)
                 trade.filledEvent += log_fill
                 self.log_order(contract, quantity, price, action)
             else:
                 with open("logs/errors.txt", "a") as f:
-                    f.write(f'Error buying {right} at {self._nope_value} | {self._underlying_price}\n')
+                    f.write(
+                        f"Error buying {right} at {self._nope_value} | {self._underlying_price}\n"
+                    )
 
     def get_total_buys(self, right):
         portfolio = self.get_portfolio()
@@ -117,69 +156,97 @@ class NopeStrategy:
 
     def enter_positions(self):
         if self._nope_value < self.config["nope"]["long_enter"]:
-            total_buys = self.get_total_buys('C')
+            total_buys = self.get_total_buys("C")
             if total_buys < self.config["nope"]["call_limit"]:
-                self.buy_contracts('C')
+                self.buy_contracts("C")
         elif self._nope_value > self.config["nope"]["short_enter"]:
-            total_buys = self.get_total_buys('P')
+            total_buys = self.get_total_buys("P")
             if total_buys < self.config["nope"]["put_limit"]:
-                self.buy_contracts('P')
+                self.buy_contracts("P")
 
     def get_held_contracts_info(self, portfolio, right):
-        return [c for c in map(lambda p: {'contract': p.contract, 'position': p.position, 'avg': p.averageCost}, portfolio)
-                if c['contract'].right == right
-                and c['position'] > 0]
+        return [
+            c
+            for c in map(
+                lambda p: {
+                    "contract": p.contract,
+                    "position": p.position,
+                    "avg": p.averageCost,
+                },
+                portfolio,
+            )
+            if c["contract"].right == right and c["position"] > 0
+        ]
 
     def get_existing_order_ids(self, trades, right, buy_or_sell):
-        return set(map(lambda t: t.contract.conId,
-                       filter(lambda t: t.contract.right == right and t.order.action == buy_or_sell, trades)))
+        return set(
+            map(
+                lambda t: t.contract.conId,
+                filter(
+                    lambda t: t.contract.right == right
+                    and t.order.action == buy_or_sell,
+                    trades,
+                ),
+            )
+        )
 
     def log_order(self, contract, quantity, price, action, avg=0):
         curr_date, curr_dt = get_datetime_for_logging()
-        log_str = f'Placed {action} order {quantity} {contract.strike}{contract.right}{contract.lastTradeDateOrContractMonth}'
-        if action == 'SELL':
-            log_str += f' ({round(avg, 2)} average)'
-        log_str += f' for {round(price * 100, 2)} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n'
+        log_str = f"Placed {action} order {quantity} {contract.strike}{contract.right}{contract.lastTradeDateOrContractMonth}"
+        if action == "SELL":
+            log_str += f" ({round(avg, 2)} average)"
+        log_str += f" for {round(price * 100, 2)} each, {self._nope_value} | {self._underlying_price} | {curr_dt}\n"
         with open(f"logs/{curr_date}-trade.txt", "a") as f:
             f.write(log_str)
 
     def sell_held_contracts(self, right):
         portfolio = self.get_portfolio()
         trades = self.get_trades()
-        action = 'SELL'
+        action = "SELL"
 
         held_contracts_info = self.get_held_contracts_info(portfolio, right)
         existing_contract_order_ids = self.get_existing_order_ids(trades, right, action)
-        remaining_contracts_info = list(filter(lambda c: c['contract'].conId not in existing_contract_order_ids, held_contracts_info))
+        remaining_contracts_info = list(
+            filter(
+                lambda c: c["contract"].conId not in existing_contract_order_ids,
+                held_contracts_info,
+            )
+        )
 
         if len(remaining_contracts_info) > 0:
-            remaining_contracts_info.sort(key=lambda c: c['contract'].conId)
-            remaining_contracts = [c['contract'] for c in remaining_contracts_info]
+            remaining_contracts_info.sort(key=lambda c: c["contract"].conId)
+            remaining_contracts = [c["contract"] for c in remaining_contracts_info]
             qualified_contracts = self.ib.qualifyContracts(*remaining_contracts)
             tickers = self.ib.reqTickers(*qualified_contracts)
             tickers.sort(key=lambda t: t.contract.conId)
             for idx, ticker in enumerate(tickers):
                 price = midpoint_or_market_price(ticker)
-                avg = remaining_contracts_info[idx]['avg']
+                avg = remaining_contracts_info[idx]["avg"]
                 if not util.isNan(price):
-                    quantity = remaining_contracts_info[idx]['position']
-                    order = LimitOrder(action, quantity, price,
-                                       algoStrategy="Adaptive",
-                                       algoParams=[TagValue(tag='adaptivePriority', value='Normal')],
-                                       tif="DAY")
+                    quantity = remaining_contracts_info[idx]["position"]
+                    order = LimitOrder(
+                        action,
+                        quantity,
+                        price,
+                        algoStrategy="Adaptive",
+                        algoParams=[TagValue(tag="adaptivePriority", value="Normal")],
+                        tif="DAY",
+                    )
                     contract = ticker.contract
                     trade = self.ib.placeOrder(contract, order)
                     trade.filledEvent += log_fill
                     self.log_order(contract, quantity, price, action, avg)
                 else:
                     with open("logs/errors.txt", "a") as f:
-                        f.write(f'Error selling {right} at {self._nope_value} | {self._underlying_price}\n')
+                        f.write(
+                            f"Error selling {right} at {self._nope_value} | {self._underlying_price}\n"
+                        )
 
     def exit_positions(self):
         if self._nope_value > self.config["nope"]["long_exit"]:
-            self.sell_held_contracts('C')
+            self.sell_held_contracts("C")
         if self._nope_value < self.config["nope"]["short_exit"]:
-            self.sell_held_contracts('P')
+            self.sell_held_contracts("P")
 
     def run_ib(self):
         async def ib_periodic():
@@ -211,7 +278,10 @@ class NopeStrategy:
 
                 curr_date, curr_dt = get_datetime_for_logging()
                 with open(f"logs/{curr_date}.txt", "a") as f:
-                    f.write(f'NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n')
+                    f.write(
+                        f"NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n"
+                    )
+
             while True:
                 await asyncio.gather(asyncio.sleep(60), fetch_and_report())
 

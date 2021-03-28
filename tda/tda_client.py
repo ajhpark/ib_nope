@@ -1,13 +1,9 @@
 import atexit
-import json
-import time
+from datetime import datetime
 from functools import reduce
-from urllib.request import urlopen
 
 import toml
-from selenium import webdriver
 
-from tda import auth
 from tda.auth import easy_client
 
 with open("conf/conf.toml", "r") as f:
@@ -52,15 +48,16 @@ class TDAClient:
             print("error getting chain")
             return [0, 0]
 
-        underlying_price = chain["underlyingPrice"]
-
-        add = lambda x, y: x + y
+        def add(x, y):
+            return x + y
 
         def gen_deltas_at_exp(type: OptionType):
             # Loop through chains at each expiry
             chain_map_key = f"{type}ExpDateMap"
             for exp_date in chain[chain_map_key]:
-                delta_factor = lambda q: q["delta"] * q["totalVolume"]
+
+                def delta_factor(q):
+                    return q["delta"] * q["totalVolume"]
 
                 call_options_delta = reduce(
                     add,

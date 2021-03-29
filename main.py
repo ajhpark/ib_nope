@@ -1,8 +1,9 @@
 import asyncio
 import logging
-import toml
 
+import toml
 from ib_insync import IB, IBC, Watchdog, util
+
 from nope.nope_strategy import NopeStrategy
 
 util.patchAsyncio()
@@ -27,7 +28,7 @@ def onDisconnect():
         task_run_ib.cancel()
 
 
-ibc = IBC(978, tradingMode='paper')
+ibc = IBC(978, tradingMode="paper")
 ib = IB()
 ib.connectedEvent += onConnect
 ib.disconnectedEvent += onDisconnect

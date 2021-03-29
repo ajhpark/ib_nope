@@ -144,3 +144,9 @@ cython_debug/
 qt/access_token.yml
 qt/generate_token.py
 logs/*
+
+# TDA
+token.pickle
+
+# vscode
+.vscode

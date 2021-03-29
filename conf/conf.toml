@@ -13,3 +13,9 @@ put_strike_offset = 1
 
 [debug]
 enabled = false
+
+[tda]
+token_path = ""
+api_key = ""
+redirect_uri = ""
+account_id = ""

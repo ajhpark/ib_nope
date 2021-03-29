@@ -1,4 +1,4 @@
-from ib_insync import *
+from ib_insync import IB, Option, Stock
 
 # For this example, must have TWS running
 
@@ -18,12 +18,16 @@ chain = next(c for c in chains if c.exchange == "SMART")
 print(chain)
 
 # get call options for all expirations and strikes within range
-strikes = [strike for strike in chain.strikes
-           if strike % 5 == 0
-           and tickerValue - 20 < strike < tickerValue + 20]
-contracts = [Option(symbol, expiration, strike, "C", "SMART", tradingClass=chain.tradingClass)
-             for expiration in chain.expirations
-             for strike in strikes]
+strikes = [
+    strike
+    for strike in chain.strikes
+    if strike % 5 == 0 and tickerValue - 20 < strike < tickerValue + 20
+]
+contracts = [
+    Option(symbol, expiration, strike, "C", "SMART", tradingClass=chain.tradingClass)
+    for expiration in chain.expirations
+    for strike in strikes
+]
 
 contracts = ib.qualifyContracts(*contracts)
 tickers = ib.reqTickers(*contracts)

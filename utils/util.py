@@ -1,7 +1,8 @@
-from ib_insync import util
-from datetime import datetime
-import traceback
 import sys
+import traceback
+from datetime import datetime
+
+from ib_insync import util
 
 
 # From thetagang
@@ -25,20 +26,20 @@ def get_stack_trace():
     stack = traceback.extract_stack()[:-1]
     if exc is not None:
         del stack[-1]
-    trc = 'Traceback (most recent call last):\n'
-    stack_str = trc + ''.join(traceback.format_list(stack))
+    trc = "Traceback (most recent call last):\n"
+    stack_str = trc + "".join(traceback.format_list(stack))
     if exc is not None:
-        stack_str += '  ' + traceback.format_exc().lstrip(trc)
+        stack_str += "  " + traceback.format_exc().lstrip(trc)
     return stack_str
 
 
 def log_exception(e: Exception, fn):
     str_err = "Error {0}".format(str(e))
     _, curr_dt = get_datetime_for_logging()
-    print(f'{str_err} in {fn} | {curr_dt}')
+    print(f"{str_err} in {fn} | {curr_dt}")
     print(get_stack_trace())
     with open("logs/errors.txt", "a") as f:
-        f.write(f'{str_err} in {fn} | {curr_dt}\n{get_stack_trace()}\n')
+        f.write(f"{str_err} in {fn} | {curr_dt}\n{get_stack_trace()}\n")
 
 
 def log_fill(filled_trade):
@@ -49,4 +50,6 @@ def log_fill(filled_trade):
         log_exception(e, "on_filled trade fills empty")
     avg_fill_price = round(fill.execution.avgPrice * 100, 2)
     with open(f"logs/{curr_date}-trade.txt", "a") as f:
-        f.write(f'{fill.execution.side} {fill.execution.shares} {fill.contract.strike}{fill.contract.right}{fill.contract.lastTradeDateOrContractMonth} for {avg_fill_price} each, {curr_dt}\n')
+        f.write(
+            f"{fill.execution.side} {fill.execution.shares} {fill.contract.strike}{fill.contract.right}{fill.contract.lastTradeDateOrContractMonth} for {avg_fill_price} each, {curr_dt}\n"
+        )

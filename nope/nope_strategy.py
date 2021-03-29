@@ -107,8 +107,7 @@ class NopeStrategy:
         )
 
     def get_total_position(self, right):
-        portfolio = self.get_portfolio()
-        held_contracts = self.get_held_contracts_info(portfolio, right)
+        held_contracts = self.get_held_contracts_info(right)
         return sum(map(lambda c: c["position"], held_contracts))
 
     def set_stop_loss(self, filled_trade):

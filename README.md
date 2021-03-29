@@ -6,8 +6,7 @@ Automated trading system for NOPE strategy over IBKR TWS
 
 1. Follow the [user guide](https://github.com/IbcAlpha/IBC/blob/master/userguide.md) to install IBC
 2. Run `pip install -r requirements.txt`
-3. Run `pip install https://github.com/jborchma/qtrade/archive/master.zip`
-4. Edit `qt/generate_token.py` so that it uses your access code, and then run it to generate `access_token.yml`
+3. (If using Questrade for NOPE) Edit `qt/generate_token.py` so that it uses your access code, and then run it to generate `access_token.yml`
 
 ## Start
 

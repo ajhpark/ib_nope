@@ -3,6 +3,7 @@ ib-insync==0.9.65
 nest-asyncio==1.5.1
 numpy==1.20.1
 toml==0.10.2
+qtrade==0.3.1
 selenium==3.141.0
 tda_api==1.1.8
 pre-commit==2.11.1

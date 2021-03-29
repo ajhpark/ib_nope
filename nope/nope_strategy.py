@@ -94,7 +94,8 @@ class NopeStrategy:
 
         return contracts
 
-    def get_num_open_buy_orders(self, trades, right):
+    def get_num_open_buy_orders(self, right):
+        trades = self.get_trades()
         return sum(
             map(
                 lambda t: t.order.totalQuantity,
@@ -105,9 +106,13 @@ class NopeStrategy:
             )
         )
 
-    def get_total_position(self, portfolio, right):
+    def get_total_position(self, right):
+        portfolio = self.get_portfolio()
         held_contracts = self.get_held_contracts_info(portfolio, right)
         return sum(map(lambda c: c["position"], held_contracts))
+
+    def set_stop_loss(self, filled_trade):
+        pass
 
     def buy_contracts(self, right):
         action = "BUY"
@@ -140,6 +145,8 @@ class NopeStrategy:
                 )
                 trade = self.ib.placeOrder(contract, order)
                 trade.filledEvent += log_fill
+                if self.config["nope"]["set_stop_loss"]:
+                    trade.filledEvent += self.set_stop_loss
                 self.log_order(contract, quantity, price, action)
             else:
                 with open("logs/errors.txt", "a") as f:
@@ -148,10 +155,8 @@ class NopeStrategy:
                     )
 
     def get_total_buys(self, right):
-        portfolio = self.get_portfolio()
-        trades = self.get_trades()
-        held_puts = self.get_total_position(portfolio, right)
-        existing_order_quantity = self.get_num_open_buy_orders(trades, right)
+        held_puts = self.get_total_position(right)
+        existing_order_quantity = self.get_num_open_buy_orders(right)
         return held_puts + existing_order_quantity
 
     def enter_positions(self):
@@ -164,7 +169,8 @@ class NopeStrategy:
             if total_buys < self.config["nope"]["put_limit"]:
                 self.buy_contracts("P")
 
-    def get_held_contracts_info(self, portfolio, right):
+    def get_held_contracts_info(self, right):
+        portfolio = self.get_portfolio()
         return [
             c
             for c in map(
@@ -178,7 +184,8 @@ class NopeStrategy:
             if c["contract"].right == right and c["position"] > 0
         ]
 
-    def get_existing_order_ids(self, trades, right, buy_or_sell):
+    def get_existing_order_ids(self, right, buy_or_sell):
+        trades = self.get_trades()
         return set(
             map(
                 lambda t: t.contract.conId,
@@ -200,12 +207,9 @@ class NopeStrategy:
             f.write(log_str)
 
     def sell_held_contracts(self, right):
-        portfolio = self.get_portfolio()
-        trades = self.get_trades()
         action = "SELL"
-
-        held_contracts_info = self.get_held_contracts_info(portfolio, right)
-        existing_contract_order_ids = self.get_existing_order_ids(trades, right, action)
+        held_contracts_info = self.get_held_contracts_info(right)
+        existing_contract_order_ids = self.get_existing_order_ids(right, action)
         remaining_contracts_info = list(
             filter(
                 lambda c: c["contract"].conId not in existing_contract_order_ids,

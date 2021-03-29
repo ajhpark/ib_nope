@@ -11,6 +11,8 @@ expiry_offset = 2
 call_strike_offset = 1
 put_strike_offset = 1
 
+set_stop_loss = true
+
 [debug]
 enabled = false
 

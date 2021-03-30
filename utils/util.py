@@ -48,8 +48,13 @@ def log_fill(filled_trade):
         fill = filled_trade.fills[0]
     except Exception as e:
         log_exception(e, "on_filled trade fills empty")
+        return
     avg_fill_price = round(fill.execution.avgPrice * 100, 2)
     with open(f"logs/{curr_date}-trade.txt", "a") as f:
         f.write(
             f"{fill.execution.side} {fill.execution.shares} {fill.contract.strike}{fill.contract.right}{fill.contract.lastTradeDateOrContractMonth} for {avg_fill_price} each, {curr_dt}\n"
         )
+
+
+def stop_order_price(price, stop_loss_percentage):
+    return round(price - (price * (stop_loss_percentage / 100)), 2)

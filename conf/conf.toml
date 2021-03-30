@@ -1,17 +1,27 @@
 [nope]
+# Enter and exit NOPE thresholds
 long_enter = -60
 long_exit  = -30
 short_enter = 50
 short_exit  = 35
+
+# Buy contracts up to the configured limit
 call_limit = 5
 put_limit = 5
+
+# How many contracts to buy per order
 call_quantity = 1
 put_quantity = 1
+
+# DTE setting, 0 is same day expiry, higher is later dates
 expiry_offset = 2
+
+# Strike price setting, 0 is ATM, higher is OTM
 call_strike_offset = 1
 put_strike_offset = 1
 
-set_stop_loss = true
+# Cut losses at this return
+stop_loss_percentage = 15
 
 [debug]
 enabled = false

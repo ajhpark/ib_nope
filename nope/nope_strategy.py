@@ -1,7 +1,7 @@
 import asyncio
 
 from ib_insync import IB, Option, Stock, TagValue, util
-from ib_insync.order import LimitOrder
+from ib_insync.order import LimitOrder, StopOrder
 
 from qt.qtrade_client import QuestradeClient
 from utils.util import (
@@ -9,6 +9,7 @@ from utils.util import (
     log_exception,
     log_fill,
     midpoint_or_market_price,
+    stop_order_price,
 )
 
 
@@ -94,7 +95,8 @@ class NopeStrategy:
 
         return contracts
 
-    def get_num_open_buy_orders(self, trades, right):
+    def get_num_open_buy_orders(self, right):
+        trades = self.get_trades()
         return sum(
             map(
                 lambda t: t.order.totalQuantity,
@@ -105,9 +107,51 @@ class NopeStrategy:
             )
         )
 
-    def get_total_position(self, portfolio, right):
-        held_contracts = self.get_held_contracts_info(portfolio, right)
+    def get_total_position(self, right):
+        held_contracts = self.get_held_contracts_info(right)
         return sum(map(lambda c: c["position"], held_contracts))
+
+    def cancel_order_type(self, action, order_type="LMT"):
+        trades = self.get_trades()
+        filtered = list(
+            filter(
+                lambda t: t.order.action == action and t.order.orderType == order_type,
+                trades,
+            )
+        )
+        for trade in filtered:
+            self.ib.cancelOrder(trade.order)
+
+    def get_open_stop_orders(self):
+        trades = self.get_trades()
+        return list(filter(lambda t: t.order.orderType == "STP", trades))
+
+    def set_stop_loss(self, right):
+        existing_stop_orders = self.get_open_stop_orders()
+        if len(existing_stop_orders) == 0:
+            total_position = self.get_total_position(right)
+            buy_limit = (
+                self.config["nope"]["call_limit"]
+                if right == "C"
+                else self.config["nope"]["put_limit"]
+            )
+            if total_position >= buy_limit:
+                held_contracts_info = self.get_held_contracts_info(right)
+                for contract_info in held_contracts_info:
+                    position = contract_info["position"]
+                    avg_price = contract_info["avg"] / 100
+                    contract = contract_info["contract"]
+                    qualified_contracts = self.ib.qualifyContracts(contract)
+
+                    stop_loss_order = StopOrder(
+                        "SELL",
+                        position,
+                        stop_order_price(
+                            avg_price, self.config["nope"]["stop_loss_percentage"]
+                        ),
+                        tif="DAY",
+                    )
+                    self.ib.placeOrder(qualified_contracts[0], stop_loss_order)
 
     def buy_contracts(self, right):
         action = "BUY"
@@ -148,10 +192,8 @@ class NopeStrategy:
                     )
 
     def get_total_buys(self, right):
-        portfolio = self.get_portfolio()
-        trades = self.get_trades()
-        held_puts = self.get_total_position(portfolio, right)
-        existing_order_quantity = self.get_num_open_buy_orders(trades, right)
+        held_puts = self.get_total_position(right)
+        existing_order_quantity = self.get_num_open_buy_orders(right)
         return held_puts + existing_order_quantity
 
     def enter_positions(self):
@@ -164,7 +206,8 @@ class NopeStrategy:
             if total_buys < self.config["nope"]["put_limit"]:
                 self.buy_contracts("P")
 
-    def get_held_contracts_info(self, portfolio, right):
+    def get_held_contracts_info(self, right):
+        portfolio = self.get_portfolio()
         return [
             c
             for c in map(
@@ -178,13 +221,15 @@ class NopeStrategy:
             if c["contract"].right == right and c["position"] > 0
         ]
 
-    def get_existing_order_ids(self, trades, right, buy_or_sell):
+    def get_existing_order_ids(self, right, action):
+        trades = self.get_trades()
         return set(
             map(
                 lambda t: t.contract.conId,
                 filter(
                     lambda t: t.contract.right == right
-                    and t.order.action == buy_or_sell,
+                    and t.order.action == action
+                    and t.order.orderType != "STP",
                     trades,
                 ),
             )
@@ -200,12 +245,9 @@ class NopeStrategy:
             f.write(log_str)
 
     def sell_held_contracts(self, right):
-        portfolio = self.get_portfolio()
-        trades = self.get_trades()
         action = "SELL"
-
-        held_contracts_info = self.get_held_contracts_info(portfolio, right)
-        existing_contract_order_ids = self.get_existing_order_ids(trades, right, action)
+        held_contracts_info = self.get_held_contracts_info(right)
+        existing_contract_order_ids = self.get_existing_order_ids(right, action)
         remaining_contracts_info = list(
             filter(
                 lambda c: c["contract"].conId not in existing_contract_order_ids,
@@ -236,6 +278,7 @@ class NopeStrategy:
                     trade = self.ib.placeOrder(contract, order)
                     trade.filledEvent += log_fill
                     self.log_order(contract, quantity, price, action, avg)
+                    self.cancel_order_type("SELL", "STP")
                 else:
                     with open("logs/errors.txt", "a") as f:
                         f.write(
@@ -262,8 +305,16 @@ class NopeStrategy:
                 except Exception as e:
                     log_exception(e, "exit_positions")
 
+            async def stop_loss():
+                try:
+                    self.set_stop_loss("C")
+                except Exception as e:
+                    log_exception(e, "stop_loss")
+
             while True:
-                await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
+                await asyncio.gather(
+                    asyncio.sleep(60), enter_pos(), exit_pos(), stop_loss()
+                )
 
         loop = asyncio.get_event_loop()
         return loop.create_task(ib_periodic())

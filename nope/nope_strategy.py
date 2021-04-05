@@ -126,7 +126,7 @@ class NopeStrategy:
         trades = self.get_trades()
         return list(filter(lambda t: t.order.orderType == "STP", trades))
 
-    def set_stop_loss(self, right):
+    async def set_stop_loss(self, right):
         existing_stop_orders = self.get_open_stop_orders()
         if len(existing_stop_orders) == 0:
             total_position = self.get_total_position(right)
@@ -142,16 +142,22 @@ class NopeStrategy:
                     avg_price = contract_info["avg"] / 100
                     contract = contract_info["contract"]
                     qualified_contracts = self.ib.qualifyContracts(contract)
-
-                    stop_loss_order = StopOrder(
-                        "SELL",
-                        position,
-                        stop_order_price(
-                            avg_price, self.config["nope"]["stop_loss_percentage"]
-                        ),
-                        tif="DAY",
+                    order_price = stop_order_price(
+                        avg_price, self.config["nope"]["stop_loss_percentage"]
                     )
-                    self.ib.placeOrder(qualified_contracts[0], stop_loss_order)
+
+                    if len(qualified_contracts) > 0:
+                        stop_loss_order = StopOrder(
+                            "SELL",
+                            position,
+                            order_price,
+                            tif="GTC",
+                        )
+                        qualified_contract = qualified_contracts[0]
+                        self.ib.placeOrder(qualified_contract, stop_loss_order)
+                        self.log_order(
+                            qualified_contract, position, order_price, "STOP"
+                        )
 
     def buy_contracts(self, right):
         action = "BUY"
@@ -264,7 +270,7 @@ class NopeStrategy:
             for idx, ticker in enumerate(tickers):
                 price = midpoint_or_market_price(ticker)
                 avg = remaining_contracts_info[idx]["avg"]
-                if not util.isNan(price):
+                if not util.isNan(price) and price > (avg / 100):
                     quantity = remaining_contracts_info[idx]["position"]
                     order = LimitOrder(
                         action,
@@ -307,7 +313,9 @@ class NopeStrategy:
 
             async def stop_loss():
                 try:
-                    self.set_stop_loss("C")
+                    await asyncio.gather(
+                        self.set_stop_loss("C"), self.set_stop_loss("P")
+                    )
                 except Exception as e:
                     log_exception(e, "stop_loss")
 

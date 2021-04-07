@@ -15,17 +15,15 @@ if config["debug"]["enabled"]:
     asyncio.get_event_loop().set_debug(True)
     util.logToConsole(logging.DEBUG)
 
-task_run_ib = None
-
 
 def onConnect():
-    global task_run_ib
-    task_run_ib = nope_strategy.execute()
+    nope_strategy.execute()
 
 
 def onDisconnect():
-    if task_run_ib is not None:
-        task_run_ib.cancel()
+    tasks = nope_strategy.get_tasks_dict()
+    run_ib_task = tasks.pop("run_ib")
+    run_ib_task.cancel()
 
 
 ibc = IBC(978, tradingMode="paper")

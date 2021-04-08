@@ -25,6 +25,7 @@ stop_loss_percentage = 15
 
 [debug]
 enabled = false
+verbose = true
 
 [tda]
 token_path = ""

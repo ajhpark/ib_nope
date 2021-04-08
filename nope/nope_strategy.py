@@ -226,6 +226,11 @@ class NopeStrategy:
         return held_puts + existing_order_quantity
 
     def enter_positions(self):
+        if self.config["debug"]["verbose"]:
+            _, curr_dt = get_datetime_for_logging()
+            print(
+                f"===== ENTER POSITIONS ===== {self._nope_value} ===== {self._underlying_price} ===== {curr_dt}"
+            )
         if self._nope_value < self.config["nope"]["long_enter"]:
             total_buys = self.get_total_buys("C")
             if total_buys < self.config["nope"]["call_limit"]:
@@ -315,6 +320,11 @@ class NopeStrategy:
                         )
 
     def exit_positions(self):
+        if self.config["debug"]["verbose"]:
+            _, curr_dt = get_datetime_for_logging()
+            print(
+                f"===== EXIT POSITIONS  ===== {self._nope_value} ===== {self._underlying_price} ===== {curr_dt}"
+            )
         if self._nope_value > self.config["nope"]["long_exit"]:
             self.sell_held_contracts("C")
         if self._nope_value < self.config["nope"]["short_exit"]:
@@ -349,6 +359,10 @@ class NopeStrategy:
                     log_exception(e, "set_nope_value")
 
                 curr_date, curr_dt = get_datetime_for_logging()
+                if self.config["debug"]["verbose"]:
+                    print(
+                        f"NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}"
+                    )
                 with open(f"logs/{curr_date}.txt", "a") as f:
                     f.write(
                         f"NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n"

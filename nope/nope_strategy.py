@@ -22,8 +22,12 @@ class NopeStrategy:
         self.ib = ib
         self._nope_value = 0
         self._underlying_price = 0
+        self.ib_tasks_dict = dict()
         self.qt = QuestradeClient(token_yaml=self.QT_ACCESS_TOKEN)
         self.run_qt_tasks()
+
+    def get_tasks_dict(self):
+        return self.ib_tasks_dict
 
     def req_market_data(self):
         # https://interactivebrokers.github.io/tws-api/market_data_type.html
@@ -126,7 +130,7 @@ class NopeStrategy:
         trades = self.get_trades()
         return list(filter(lambda t: t.order.orderType == "STP", trades))
 
-    async def set_stop_loss(self, right):
+    def set_stop_loss(self, right):
         existing_stop_orders = self.get_open_stop_orders()
         if len(existing_stop_orders) == 0:
             total_position = self.get_total_position(right)
@@ -158,6 +162,24 @@ class NopeStrategy:
                         self.log_order(
                             qualified_contract, position, order_price, "STOP"
                         )
+                        stop_loss_task = self.ib_tasks_dict.pop("set_stop_loss")
+                        stop_loss_task.cancel()
+
+    def on_buy_fill(self, trade):
+        async def stop_loss_periodic():
+            async def schedule_stop_loss():
+                try:
+                    fill = trade.fills[0]
+                    self.set_stop_loss(fill.contract.right)
+                except Exception as e:
+                    log_exception(e, "on_buy_fill")
+
+            while True:
+                await asyncio.gather(asyncio.sleep(120), schedule_stop_loss())
+
+        if "set_stop_loss" not in self.ib_tasks_dict:
+            loop = asyncio.get_event_loop()
+            self.ib_tasks_dict["set_stop_loss"] = loop.create_task(stop_loss_periodic())
 
     def buy_contracts(self, right):
         action = "BUY"
@@ -190,6 +212,7 @@ class NopeStrategy:
                 )
                 trade = self.ib.placeOrder(contract, order)
                 trade.filledEvent += log_fill
+                trade.filledEvent += self.on_buy_fill
                 self.log_order(contract, quantity, price, action)
             else:
                 with open("logs/errors.txt", "a") as f:
@@ -311,21 +334,11 @@ class NopeStrategy:
                 except Exception as e:
                     log_exception(e, "exit_positions")
 
-            async def stop_loss():
-                try:
-                    await asyncio.gather(
-                        self.set_stop_loss("C"), self.set_stop_loss("P")
-                    )
-                except Exception as e:
-                    log_exception(e, "stop_loss")
-
             while True:
-                await asyncio.gather(
-                    asyncio.sleep(60), enter_pos(), exit_pos(), stop_loss()
-                )
+                await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
 
         loop = asyncio.get_event_loop()
-        return loop.create_task(ib_periodic())
+        self.ib_tasks_dict["run_ib"] = loop.create_task(ib_periodic())
 
     def run_qt_tasks(self):
         async def nope_periodic():
@@ -352,7 +365,7 @@ class NopeStrategy:
                     log_exception(e, "refresh_token")
 
             while True:
-                await asyncio.sleep(600)
+                await asyncio.sleep(120)
                 await refresh_token()
 
         loop = asyncio.get_event_loop()
@@ -361,4 +374,4 @@ class NopeStrategy:
 
     def execute(self):
         self.req_market_data()
-        return self.run_ib()
+        self.run_ib()

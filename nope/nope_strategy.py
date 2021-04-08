@@ -1,4 +1,5 @@
 import asyncio
+import threading
 
 from ib_insync import IB, Option, Stock, TagValue, util
 from ib_insync.order import LimitOrder, StopOrder
@@ -382,9 +383,15 @@ class NopeStrategy:
                 await asyncio.sleep(120)
                 await refresh_token()
 
-        loop = asyncio.get_event_loop()
-        loop.create_task(nope_periodic())
-        loop.create_task(token_refresh_periodic())
+        def run_thread():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.create_task(nope_periodic())
+            loop.create_task(token_refresh_periodic())
+            loop.run_forever()
+
+        thread = threading.Thread(target=run_thread)
+        thread.start()
 
     def execute(self):
         self.req_market_data()

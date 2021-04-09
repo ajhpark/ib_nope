@@ -27,6 +27,11 @@ class NopeStrategy:
         self.qt = QuestradeClient(token_yaml=self.QT_ACCESS_TOKEN)
         self.run_qt_tasks()
 
+    def console_log(self, s):
+        if self.config["debug"]["verbose"]:
+            _, curr_dt = get_datetime_for_logging()
+            print(s, f"| {self._nope_value} | {self._underlying_price} | {curr_dt}")
+
     def get_tasks_dict(self):
         return self.ib_tasks_dict
 
@@ -131,7 +136,13 @@ class NopeStrategy:
         trades = self.get_trades()
         return list(filter(lambda t: t.order.orderType == "STP", trades))
 
+    def cancel_stop_loss_task(self):
+        if "set_stop_loss" in self.ib_tasks_dict:
+            stop_loss_task = self.ib_tasks_dict.pop("set_stop_loss")
+            stop_loss_task.cancel()
+
     def set_stop_loss(self, right):
+        self.console_log("Check stop loss conditions")
         existing_stop_orders = self.get_open_stop_orders()
         if len(existing_stop_orders) == 0:
             total_position = self.get_total_position(right)
@@ -163,8 +174,7 @@ class NopeStrategy:
                         self.log_order(
                             qualified_contract, position, order_price, "STOP"
                         )
-                        stop_loss_task = self.ib_tasks_dict.pop("set_stop_loss")
-                        stop_loss_task.cancel()
+                        self.cancel_stop_loss_task()
 
     def on_buy_fill(self, trade):
         async def stop_loss_periodic():
@@ -227,11 +237,7 @@ class NopeStrategy:
         return held_puts + existing_order_quantity
 
     def enter_positions(self):
-        if self.config["debug"]["verbose"]:
-            _, curr_dt = get_datetime_for_logging()
-            print(
-                f"===== ENTER POSITIONS ===== {self._nope_value} ===== {self._underlying_price} ===== {curr_dt}"
-            )
+        self.console_log("Check enter thresholds")
         if self._nope_value < self.config["nope"]["long_enter"]:
             total_buys = self.get_total_buys("C")
             if total_buys < self.config["nope"]["call_limit"]:
@@ -314,6 +320,7 @@ class NopeStrategy:
                     trade.filledEvent += log_fill
                     self.log_order(contract, quantity, price, action, avg)
                     self.cancel_order_type("SELL", "STP")
+                    self.cancel_stop_loss_task()
                 else:
                     with open("logs/errors.txt", "a") as f:
                         f.write(
@@ -321,11 +328,7 @@ class NopeStrategy:
                         )
 
     def exit_positions(self):
-        if self.config["debug"]["verbose"]:
-            _, curr_dt = get_datetime_for_logging()
-            print(
-                f"===== EXIT POSITIONS  ===== {self._nope_value} ===== {self._underlying_price} ===== {curr_dt}"
-            )
+        self.console_log("Check exit thresholds")
         if self._nope_value > self.config["nope"]["long_exit"]:
             self.sell_held_contracts("C")
         if self._nope_value < self.config["nope"]["short_exit"]:
@@ -359,11 +362,8 @@ class NopeStrategy:
                 except Exception as e:
                     log_exception(e, "set_nope_value")
 
+                self.console_log("Updated NOPE and stock price")
                 curr_date, curr_dt = get_datetime_for_logging()
-                if self.config["debug"]["verbose"]:
-                    print(
-                        f"NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}"
-                    )
                 with open(f"logs/{curr_date}.txt", "a") as f:
                     f.write(
                         f"NOPE @ {self._nope_value} | Stock Price @ {self._underlying_price} | {curr_dt}\n"

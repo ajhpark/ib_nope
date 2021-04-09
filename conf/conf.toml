@@ -2,8 +2,8 @@
 # Enter and exit NOPE thresholds
 long_enter = -60
 long_exit  = -30
-short_enter = 50
-short_exit  = 35
+short_enter = 45
+short_exit  = 30
 
 # Buy contracts up to the configured limit
 call_limit = 5
@@ -25,6 +25,7 @@ stop_loss_percentage = 15
 
 [debug]
 enabled = false
+verbose = false
 
 [tda]
 token_path = ""

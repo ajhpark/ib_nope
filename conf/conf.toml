@@ -27,6 +27,10 @@ stop_loss_percentage = 15
 enabled = false
 verbose = false
 
+[ib]
+# Used to check account balance before buys, leave empty to skip checking
+account = ""
+
 [tda]
 token_path = ""
 api_key = ""

@@ -192,6 +192,22 @@ class NopeStrategy:
             loop = asyncio.get_event_loop()
             self.ib_tasks_dict["set_stop_loss"] = loop.create_task(stop_loss_periodic())
 
+    def check_acc_balance(self, price, quantity):
+        ib_account = self.config["ib"]["account"]
+        if not ib_account:
+            return True
+        acc_values = self.ib.accountValues(account=ib_account)
+        buy_power = list(
+            filter(lambda a: a.tag == "BuyingPower" and a.currency == "USD", acc_values)
+        )
+        try:
+            balance = buy_power[0]
+        except Exception as e:
+            log_exception(e, "check_acc_balance")
+            return False
+
+        return float(balance.value) > price * 100 * quantity
+
     def buy_contracts(self, right):
         action = "BUY"
         contracts = self.find_eligible_contracts(self.SYMBOL, right)
@@ -206,13 +222,13 @@ class NopeStrategy:
         tickers = self.ib.reqTickers(*qualified_contracts)
         if len(tickers) > 0:
             price = midpoint_or_market_price(tickers[0])
-            if not util.isNan(price):
+            quantity = (
+                self.config["nope"]["call_quantity"]
+                if right == "C"
+                else self.config["nope"]["put_quantity"]
+            )
+            if not util.isNan(price) and self.check_acc_balance(price, quantity):
                 contract = qualified_contracts[0]
-                quantity = (
-                    self.config["nope"]["call_quantity"]
-                    if right == "C"
-                    else self.config["nope"]["put_quantity"]
-                )
                 order = LimitOrder(
                     action,
                     quantity,

@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from functools import reduce
 
 from ib_insync import IB, Option, Stock, TagValue, util
 from ib_insync.order import LimitOrder, StopOrder
@@ -77,19 +78,30 @@ class NopeStrategy:
             if strike % 1 == 0:
                 if right == "C":
                     max_ntm_call_strike = ticker_value + MAX_STRIKE_OFFSET
-                    return ticker_value <= strike <= max_ntm_call_strike
+                    return (
+                        ticker_value - MAX_STRIKE_OFFSET
+                        <= strike
+                        <= max_ntm_call_strike
+                    )
                 elif right == "P":
                     min_ntm_put_strike = ticker_value - MAX_STRIKE_OFFSET
-                    return min_ntm_put_strike <= strike <= ticker_value
+                    return (
+                        min_ntm_put_strike <= strike <= ticker_value + MAX_STRIKE_OFFSET
+                    )
             return False
 
         strikes = [strike for strike in chain.strikes if valid_strike(strike)]
 
-        # TODO: Remove slicing once contract selection algorithm implemented
-        exp_offset = self.config["nope"]["expiry_offset"]
-        expirations = sorted(exp for exp in chain.expirations)[
-            exp_offset : exp_offset + 1
-        ]
+        if self.config["nope"]["contract_auto_select"]:
+            min_dte = self.config["nope"]["auto_min_dte"]
+            expirations = sorted(exp for exp in chain.expirations)[
+                min_dte : min_dte + 5
+            ]
+        else:
+            exp_offset = self.config["nope"]["expiry_offset"]
+            expirations = sorted(exp for exp in chain.expirations)[
+                exp_offset : exp_offset + 1
+            ]
 
         contracts = [
             Option(
@@ -209,27 +221,61 @@ class NopeStrategy:
 
         return float(balance.value) > price * 100 * quantity
 
+    def select_contract(self, contracts, right):
+        if self.config["nope"]["contract_auto_select"]:
+            target = self.config["nope"]["auto_target_delta"] / 100
+            target_delta = target if right == "C" else -target
+
+            def reducer(ticker_prev, ticker):
+                greeks_prev = ticker_prev.modelGreeks
+                greeks = ticker.modelGreeks
+                if greeks_prev is None and greeks is None:
+                    return ticker_prev
+                elif greeks_prev is None:
+                    return ticker
+                elif greeks is None:
+                    return ticker_prev
+
+                ticker_next = (
+                    ticker
+                    if abs(ticker.modelGreeks.delta - target_delta)
+                    < abs(ticker_prev.modelGreeks.delta - target_delta)
+                    else ticker_prev
+                )
+
+                return ticker_next
+
+            qualified_contracts = self.ib.qualifyContracts(*contracts)
+            tickers = self.ib.reqTickers(*qualified_contracts)
+            if len(tickers) > 0:
+                closest = reduce(reducer, tickers)
+                return closest
+        else:
+            offset = (
+                self.config["nope"]["call_strike_offset"]
+                if right == "C"
+                else -self.config["nope"]["put_strike_offset"] - 1
+            )
+            contract_to_buy = contracts[offset]
+            qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
+            tickers = self.ib.reqTickers(*qualified_contracts)
+            if len(tickers) > 0:
+                return tickers[0]
+        return None
+
     def buy_contracts(self, right):
         action = "BUY"
         contracts = self.find_eligible_contracts(self.SYMBOL, right)
-        # TODO: Improve contract selection https://github.com/ajhpark/ib_nope/issues/21
-        offset = (
-            self.config["nope"]["call_strike_offset"]
-            if right == "C"
-            else -self.config["nope"]["put_strike_offset"] - 1
-        )
-        contract_to_buy = contracts[offset]
-        qualified_contracts = self.ib.qualifyContracts(contract_to_buy)
-        tickers = self.ib.reqTickers(*qualified_contracts)
-        if len(tickers) > 0:
-            price = midpoint_or_market_price(tickers[0])
+        ticker = self.select_contract(contracts, right)
+        if ticker is not None:
+            price = midpoint_or_market_price(ticker)
             quantity = (
                 self.config["nope"]["call_quantity"]
                 if right == "C"
                 else self.config["nope"]["put_quantity"]
             )
             if not util.isNan(price) and self.check_acc_balance(price, quantity):
-                contract = qualified_contracts[0]
+                contract = ticker.contract
                 order = LimitOrder(
                     action,
                     quantity,
@@ -369,7 +415,7 @@ class NopeStrategy:
                 await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
 
         async def check_orders():
-            async def cancel_old_orders():
+            async def cancel_unfilled_orders():
                 cancellable_statuses = ["PreSubmitted", "Submitted"]
                 trades = self.get_trades()
                 for trade in trades:
@@ -379,15 +425,16 @@ class NopeStrategy:
                     try:
                         submit_log = submit_logs[0]
                     except Exception as e:
-                        log_exception(e, "cancel_old_orders")
+                        log_exception(e, "cancel_unfilled_orders")
                         return
 
                     diff = get_datetime_diff_from_now(submit_log.time)
                     if diff > self.config["nope"]["minutes_cancel_unfilled"]:
                         self.ib.cancelOrder(trade.order)
+                        self.console_log("Cancelled old order")
 
             while True:
-                await asyncio.gather(asyncio.sleep(600), cancel_old_orders())
+                await asyncio.gather(asyncio.sleep(600), cancel_unfilled_orders())
 
         loop = asyncio.get_event_loop()
         self.ib_tasks_dict["run_ib"] = loop.create_task(ib_periodic())

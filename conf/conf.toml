@@ -13,10 +13,17 @@ put_limit = 5
 call_quantity = 1
 put_quantity = 1
 
-# DTE setting, 0 is same day expiry, higher is later dates
+# Automatically select optimal contract to buy
+contract_auto_select = true
+# Min. DTE offset for auto-select
+auto_min_dte = 1
+# Delta to aim for with auto-select, recommend 30 for auto_min_dte = 0, 60 for auto_min_dte > 0
+auto_target_delta = 60
+
+# Manual DTE setting to use when contract_auto_select is false, 0 is same day expiry, higher is later dates
 expiry_offset = 2
 
-# Strike price setting, 0 is ATM, higher is OTM
+# Manual strike price setting to use when contract_auto_select is false, 0 is ATM, higher is OTM
 call_strike_offset = 1
 put_strike_offset = 1
 

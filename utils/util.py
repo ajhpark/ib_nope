@@ -1,6 +1,6 @@
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ib_insync import util
 
@@ -19,6 +19,11 @@ def get_datetime_for_logging():
     curr_date = now.strftime("%Y-%m-%d")
     curr_dt = now.strftime("%Y-%m-%d at %H:%M:%S")
     return [curr_date, curr_dt]
+
+
+def get_datetime_diff_from_now(dt):
+    diff = datetime.utcnow().replace(tzinfo=timezone.utc) - dt
+    return diff.seconds / 60
 
 
 def get_stack_trace():

@@ -6,6 +6,7 @@ from ib_insync.order import LimitOrder, StopOrder
 
 from qt.qtrade_client import QuestradeClient
 from utils.util import (
+    get_datetime_diff_from_now,
     get_datetime_for_logging,
     log_exception,
     log_fill,
@@ -367,8 +368,30 @@ class NopeStrategy:
             while True:
                 await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
 
+        async def check_orders():
+            async def cancel_old_orders():
+                cancellable_statuses = ["PreSubmitted", "Submitted"]
+                trades = self.get_trades()
+                for trade in trades:
+                    submit_logs = list(
+                        filter(lambda l: l.status in cancellable_statuses, trade.log)
+                    )
+                    try:
+                        submit_log = submit_logs[0]
+                    except Exception as e:
+                        log_exception(e, "cancel_old_orders")
+                        return
+
+                    diff = get_datetime_diff_from_now(submit_log.time)
+                    if diff > self.config["nope"]["minutes_cancel_unfilled"]:
+                        self.ib.cancelOrder(trade.order)
+
+            while True:
+                await asyncio.gather(asyncio.sleep(600), cancel_old_orders())
+
         loop = asyncio.get_event_loop()
         self.ib_tasks_dict["run_ib"] = loop.create_task(ib_periodic())
+        self.ib_tasks_dict["check_orders"] = loop.create_task(check_orders())
 
     def run_qt_tasks(self):
         async def nope_periodic():

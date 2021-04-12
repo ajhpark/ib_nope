@@ -415,10 +415,18 @@ class NopeStrategy:
                 await asyncio.gather(asyncio.sleep(60), enter_pos(), exit_pos())
 
         async def check_orders():
+            cancel_after = self.config["nope"]["minutes_cancel_unfilled"]
+
             async def cancel_unfilled_orders():
                 cancellable_statuses = ["PreSubmitted", "Submitted"]
                 trades = self.get_trades()
-                for trade in trades:
+                filtered = list(
+                    filter(
+                        lambda t: t.order.orderType != "STP",
+                        trades,
+                    )
+                )
+                for trade in filtered:
                     submit_logs = list(
                         filter(lambda l: l.status in cancellable_statuses, trade.log)
                     )
@@ -429,12 +437,14 @@ class NopeStrategy:
                         return
 
                     diff = get_datetime_diff_from_now(submit_log.time)
-                    if diff > self.config["nope"]["minutes_cancel_unfilled"]:
+                    if diff > cancel_after:
                         self.ib.cancelOrder(trade.order)
-                        self.console_log("Cancelled old order")
+                        self.console_log("Cancelled unfilled order")
 
             while True:
-                await asyncio.gather(asyncio.sleep(600), cancel_unfilled_orders())
+                await asyncio.gather(
+                    asyncio.sleep(cancel_after * 60), cancel_unfilled_orders()
+                )
 
         loop = asyncio.get_event_loop()
         self.ib_tasks_dict["run_ib"] = loop.create_task(ib_periodic())

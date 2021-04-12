@@ -23,6 +23,11 @@ put_strike_offset = 1
 # Cut losses at this return
 stop_loss_percentage = 15
 
+# Trade when NOPE hits extreme values? Default to False
+trade_extreme_nope_values = 'False'
+extreme_positive_nope = 70
+extreme_negative_nope = -100
+
 [debug]
 enabled = false
 verbose = false

@@ -253,15 +253,18 @@ class NopeStrategy:
         return held_puts + existing_order_quantity
 
     def enter_positions(self):
-        self.console_log("Check enter thresholds")
-        if self._nope_value < self.config["nope"]["long_enter"]:
-            total_buys = self.get_total_buys("C")
-            if total_buys < self.config["nope"]["call_limit"]:
-                self.buy_contracts("C")
-        elif self._nope_value > self.config["nope"]["short_enter"]:
-            total_buys = self.get_total_buys("P")
-            if total_buys < self.config["nope"]["put_limit"]:
-                self.buy_contracts("P")
+        if self.check_extreme_nope() == "False":
+            self.console_log("Check enter thresholds")
+            if self._nope_value < self.config["nope"]["long_enter"]:
+                total_buys = self.get_total_buys("C")
+                if total_buys < self.config["nope"]["call_limit"]:
+                    self.buy_contracts("C")
+            elif self._nope_value > self.config["nope"]["short_enter"]:
+                total_buys = self.get_total_buys("P")
+                if total_buys < self.config["nope"]["put_limit"]:
+                    self.buy_contracts("P")
+        elif self.check_extreme_nope() == "True":
+            return False
 
     def get_held_contracts_info(self, right):
         portfolio = self.get_portfolio()
@@ -349,6 +352,16 @@ class NopeStrategy:
             self.sell_held_contracts("C")
         if self._nope_value < self.config["nope"]["short_exit"]:
             self.sell_held_contracts("P")
+
+    def check_extreme_nope(self):
+        if self.config["nope"]["trade_extreme_nope_values"] == "True":
+            return "False"
+        elif self.config["nope"]["trade_extreme_nope_values"] == "False":
+            self.console_log("Check extreme nope")
+            if self.config["nope"]["extreme_positive_nope"] >= self._nope_value >= self.config["nope"]["extreme_negative_nope"]:
+                return "False"
+            else:
+                return "True"
 
     def run_ib(self):
         async def ib_periodic():

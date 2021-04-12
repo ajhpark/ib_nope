@@ -23,6 +23,9 @@ put_strike_offset = 1
 # Cut losses at this return
 stop_loss_percentage = 15
 
+# Cancel unfilled orders older than the set minutes
+minutes_cancel_unfilled = 10
+
 [debug]
 enabled = false
 verbose = false

@@ -21,9 +21,11 @@ def onConnect():
 
 
 def onDisconnect():
+    restart_tasks = ["run_ib", "check_orders"]
     tasks = nope_strategy.get_tasks_dict()
-    run_ib_task = tasks.pop("run_ib")
-    run_ib_task.cancel()
+    for task_name in restart_tasks:
+        task = tasks.pop(task_name)
+        task.cancel()
 
 
 ibc = IBC(978, tradingMode="paper")

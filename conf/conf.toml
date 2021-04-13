@@ -5,6 +5,10 @@ long_exit  = -30
 short_enter = 45
 short_exit  = 30
 
+# Reversions are unlikely at very low/high NOPE. Do not trade below/above these limits
+long_enter_limit = -90
+short_enter_limit = 70
+
 # Buy contracts up to the configured limit
 call_limit = 5
 put_limit = 5
@@ -29,10 +33,10 @@ call_strike_offset = 1
 put_strike_offset = 1
 
 # Cut losses at this return
-stop_loss_percentage = 15
+stop_loss_percentage = 20
 
 # Cancel unfilled orders older than the set minutes
-minutes_cancel_unfilled = 10
+minutes_cancel_unfilled = 5
 
 [debug]
 enabled = false

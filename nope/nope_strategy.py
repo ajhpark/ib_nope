@@ -147,7 +147,12 @@ class NopeStrategy:
 
     def get_open_stop_orders(self):
         trades = self.get_trades()
-        return list(filter(lambda t: t.order.orderType == "STP", trades))
+        return set(
+            map(
+                lambda t: t.contract.conId,
+                filter(lambda t: t.order.orderType == "STP", trades),
+            )
+        )
 
     def cancel_stop_loss_task(self):
         if "set_stop_loss" in self.ib_tasks_dict:
@@ -156,38 +161,38 @@ class NopeStrategy:
 
     def set_stop_loss(self, right):
         self.console_log("Check stop loss conditions")
-        existing_stop_orders = self.get_open_stop_orders()
-        if len(existing_stop_orders) == 0:
-            total_position = self.get_total_position(right)
-            buy_limit = (
-                self.config["nope"]["call_limit"]
-                if right == "C"
-                else self.config["nope"]["put_limit"]
+        total_position = self.get_total_position(right)
+        buy_limit = (
+            self.config["nope"]["call_limit"]
+            if right == "C"
+            else self.config["nope"]["put_limit"]
+        )
+        if total_position >= buy_limit:
+            existing_stop_orders = self.get_open_stop_orders()
+            held_contracts_info_no_stop_order = filter(
+                lambda c: c["contract"].conId not in existing_stop_orders,
+                self.get_held_contracts_info(right),
             )
-            if total_position >= buy_limit:
-                held_contracts_info = self.get_held_contracts_info(right)
-                for contract_info in held_contracts_info:
-                    position = contract_info["position"]
-                    avg_price = contract_info["avg"] / 100
-                    contract = contract_info["contract"]
-                    qualified_contracts = self.ib.qualifyContracts(contract)
-                    order_price = stop_order_price(
-                        avg_price, self.config["nope"]["stop_loss_percentage"]
-                    )
+            for contract_info in held_contracts_info_no_stop_order:
+                position = contract_info["position"]
+                avg_price = contract_info["avg"] / 100
+                contract = contract_info["contract"]
+                qualified_contracts = self.ib.qualifyContracts(contract)
+                order_price = stop_order_price(
+                    avg_price, self.config["nope"]["stop_loss_percentage"]
+                )
 
-                    if len(qualified_contracts) > 0:
-                        stop_loss_order = StopOrder(
-                            "SELL",
-                            position,
-                            order_price,
-                            tif="GTC",
-                        )
-                        qualified_contract = qualified_contracts[0]
-                        self.ib.placeOrder(qualified_contract, stop_loss_order)
-                        self.log_order(
-                            qualified_contract, position, order_price, "STOP"
-                        )
-                        self.cancel_stop_loss_task()
+                if len(qualified_contracts) > 0:
+                    stop_loss_order = StopOrder(
+                        "SELL",
+                        position,
+                        order_price,
+                        tif="DAY",
+                    )
+                    qualified_contract = qualified_contracts[0]
+                    self.ib.placeOrder(qualified_contract, stop_loss_order)
+                    self.log_order(qualified_contract, position, order_price, "STOP")
+                    self.cancel_stop_loss_task()
 
     def on_buy_fill(self, trade):
         async def stop_loss_periodic():

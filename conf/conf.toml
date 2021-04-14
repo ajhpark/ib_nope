@@ -23,7 +23,8 @@ auto_target_delta = 60
 # Manual DTE setting to use when contract_auto_select is false, 0 is same day expiry, higher is later dates
 expiry_offset = 2
 
-# Manual strike price setting to use when contract_auto_select is false, 0 is ATM, higher is OTM
+# Manual strike price setting to use when contract_auto_select is false, 0 is ATM, higher is OTM (10 max)
+# ATM/OTM only for manual
 call_strike_offset = 1
 put_strike_offset = 1
 

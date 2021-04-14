@@ -62,8 +62,9 @@ class NopeStrategy:
     # From thetagang
     # https://github.com/brndnmtthws/thetagang
     def find_eligible_contracts(self, symbol, right):
+        is_auto_select = self.config["nope"]["contract_auto_select"]
         EXCHANGE = "SMART"
-        MAX_STRIKE_OFFSET = 5
+        MAX_STRIKE_OFFSET = 6 if is_auto_select else 11
 
         stock = Stock(symbol, EXCHANGE, currency="USD")
         self.ib.qualifyContracts(stock)
@@ -78,21 +79,25 @@ class NopeStrategy:
             if strike % 1 == 0:
                 if right == "C":
                     max_ntm_call_strike = ticker_value + MAX_STRIKE_OFFSET
-                    return (
+                    min_itm_call_strike = (
                         ticker_value - MAX_STRIKE_OFFSET
-                        <= strike
-                        <= max_ntm_call_strike
+                        if is_auto_select
+                        else ticker_value
                     )
+                    return min_itm_call_strike <= strike <= max_ntm_call_strike
                 elif right == "P":
                     min_ntm_put_strike = ticker_value - MAX_STRIKE_OFFSET
-                    return (
-                        min_ntm_put_strike <= strike <= ticker_value + MAX_STRIKE_OFFSET
+                    max_itm_put_strike = (
+                        ticker_value + MAX_STRIKE_OFFSET
+                        if is_auto_select
+                        else ticker_value
                     )
+                    return min_ntm_put_strike <= strike <= max_itm_put_strike
             return False
 
         strikes = [strike for strike in chain.strikes if valid_strike(strike)]
 
-        if self.config["nope"]["contract_auto_select"]:
+        if is_auto_select:
             min_dte = self.config["nope"]["auto_min_dte"]
             expirations = sorted(exp for exp in chain.expirations)[
                 min_dte : min_dte + 5

@@ -195,7 +195,8 @@ class NopeStrategy:
                         tif="DAY",
                     )
                     qualified_contract = qualified_contracts[0]
-                    self.ib.placeOrder(qualified_contract, stop_loss_order)
+                    trade = self.ib.placeOrder(qualified_contract, stop_loss_order)
+                    trade.filledEvent += log_fill
                     self.log_order(qualified_contract, position, order_price, "STOP")
                     self.cancel_stop_loss_task()
 

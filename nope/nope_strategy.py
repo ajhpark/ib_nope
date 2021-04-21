@@ -303,6 +303,7 @@ class NopeStrategy:
                     algoParams=[TagValue(tag="adaptivePriority", value="Normal")],
                     tif="DAY",
                 )
+                self.cancel_order_type("SELL", "STP")
                 trade = self.ib.placeOrder(contract, order)
                 trade.filledEvent += log_fill
                 trade.filledEvent += self.on_buy_fill

@@ -195,18 +195,18 @@ class NopeStrategy:
                         tif="DAY",
                     )
                     qualified_contract = qualified_contracts[0]
-                    self.ib.placeOrder(qualified_contract, stop_loss_order)
+                    trade = self.ib.placeOrder(qualified_contract, stop_loss_order)
+                    trade.filledEvent += log_fill
                     self.log_order(qualified_contract, position, order_price, "STOP")
                     self.cancel_stop_loss_task()
 
-    def on_buy_fill(self, trade):
+    def schedule_stop_order_task(self, right):
         async def stop_loss_periodic():
             async def schedule_stop_loss():
                 try:
-                    fill = trade.fills[0]
-                    self.set_stop_loss(fill.contract.right)
+                    self.set_stop_loss(right)
                 except Exception as e:
-                    log_exception(e, "on_buy_fill")
+                    log_exception(e, "schedule_stop_order_task")
 
             while True:
                 await asyncio.gather(asyncio.sleep(120), schedule_stop_loss())
@@ -214,6 +214,15 @@ class NopeStrategy:
         if "set_stop_loss" not in self.ib_tasks_dict:
             loop = asyncio.get_event_loop()
             self.ib_tasks_dict["set_stop_loss"] = loop.create_task(stop_loss_periodic())
+
+    def on_buy_fill(self, trade):
+        try:
+            fill = trade.fills[0]
+        except Exception as e:
+            log_exception(e, "on_buy_fill")
+            return
+
+        self.schedule_stop_order_task(fill.contract.right)
 
     def check_acc_balance(self, price, quantity):
         ib_account = self.config["ib"]["account"]
@@ -294,6 +303,7 @@ class NopeStrategy:
                     algoParams=[TagValue(tag="adaptivePriority", value="Normal")],
                     tif="DAY",
                 )
+                self.cancel_order_type("SELL", "STP")
                 trade = self.ib.placeOrder(contract, order)
                 trade.filledEvent += log_fill
                 trade.filledEvent += self.on_buy_fill
@@ -311,11 +321,19 @@ class NopeStrategy:
 
     def enter_positions(self):
         self.console_log("Check enter thresholds")
-        if self._nope_value < self.config["nope"]["long_enter"]:
+        if (
+            self.config["nope"]["long_enter"]
+            > self._nope_value
+            > self.config["nope"]["long_enter_limit"]
+        ):
             total_buys = self.get_total_buys("C")
             if total_buys < self.config["nope"]["call_limit"]:
                 self.buy_contracts("C")
-        elif self._nope_value > self.config["nope"]["short_enter"]:
+        elif (
+            self.config["nope"]["short_enter"]
+            < self._nope_value
+            < self.config["nope"]["short_enter_limit"]
+        ):
             total_buys = self.get_total_buys("P")
             if total_buys < self.config["nope"]["put_limit"]:
                 self.buy_contracts("P")
@@ -358,6 +376,10 @@ class NopeStrategy:
         with open(f"logs/{curr_date}-trade.txt", "a") as f:
             f.write(log_str)
 
+    def on_sell_fill(self, trade):
+        self.cancel_order_type("SELL", "STP")
+        self.cancel_stop_loss_task()
+
     def sell_held_contracts(self, right):
         action = "SELL"
         held_contracts_info = self.get_held_contracts_info(right)
@@ -391,9 +413,8 @@ class NopeStrategy:
                     contract = ticker.contract
                     trade = self.ib.placeOrder(contract, order)
                     trade.filledEvent += log_fill
+                    trade.filledEvent += self.on_sell_fill
                     self.log_order(contract, quantity, price, action, avg)
-                    self.cancel_order_type("SELL", "STP")
-                    self.cancel_stop_loss_task()
                 else:
                     with open("logs/errors.txt", "a") as f:
                         f.write(
